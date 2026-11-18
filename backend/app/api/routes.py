@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-from collections import deque
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func, or_, select, text
@@ -22,8 +21,15 @@ from app.ingestion.url import parse_github_url
 from app.schemas import api as s
 from app.search.fts import search as fts_search
 
-router = APIRouter(prefix="/api")
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+
+
+def require_auth(request: Request, db: Session = Depends(get_db)) -> str:
+    return request.app.state.auth.authenticate(request, db)
+
+
+public = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
 
 
 def settings_dep(request: Request) -> Settings:
@@ -42,12 +48,12 @@ def _snapshot(db: Session, snapshot_id: int) -> Snapshot:
 
 
 # ---------------------------------------------------------------- health
-@router.get("/health", response_model=s.HealthOut, tags=["health"])
+@public.get("/health", response_model=s.HealthOut, tags=["health"])
 def health(settings: Settings = Depends(settings_dep)) -> s.HealthOut:
     return s.HealthOut(status="ok", app=settings.app_name, version=VERSION)
 
 
-@router.get("/health/ready", response_model=s.ReadinessOut, tags=["health"])
+@public.get("/health/ready", response_model=s.ReadinessOut, tags=["health"])
 def ready(request: Request, db: Session = Depends(get_db), settings: Settings = Depends(settings_dep)) -> s.ReadinessOut:
     db_ok = True
     try:
@@ -56,12 +62,20 @@ def ready(request: Request, db: Session = Depends(get_db), settings: Settings = 
         db_ok = False
     worker = getattr(request.app.state, "worker", None)
     runtime: OpenCodeRuntime = request.app.state.runtime
-    agent = {"mode": settings.opencode.mode, "enabled": runtime.enabled}
+    agent = {
+        "mode": settings.opencode.mode,
+        "enabled": runtime.enabled,
+        "worker_mode": getattr(request.app.state, "worker_mode", None),
+        "auth_mode": settings.auth_mode,
+    }
     return s.ReadinessOut(
         status="ok" if db_ok else "degraded",
         database=db_ok,
         git=shutil.which(settings.git_executable),
-        worker_running=bool(worker and worker._thread and worker._thread.is_alive()),
+        worker_running=bool(
+            (worker and worker._thread and worker._thread.is_alive())
+            or (getattr(request.app.state, "worker_process", None) and request.app.state.worker_process.alive)
+        ),
         agent=agent,
     )
 
@@ -281,50 +295,27 @@ def get_graph(
 
 @router.get("/snapshots/{snapshot_id}/impact", response_model=s.ImpactOut, tags=["graph"])
 def impact(snapshot_id: int, key: str = Query(max_length=1200), depth: int = Query(3, ge=1, le=6), db: Session = Depends(get_db)) -> s.ImpactOut:
-    """What could be affected if `key` changes: reverse traversal over resolved imports/calls/inheritance."""
-    _snapshot(db, snapshot_id)
-    nodes = {n.key: n for n in db.scalars(select(GraphNode).where(GraphNode.snapshot_id == snapshot_id))}
-    if key not in nodes:
+    """What could be affected if `key` changes. Results are POTENTIAL impact from static reachability."""
+    from app.graph.queries import impact as impact_query
+    from app.graph.queries import load_index
+
+    snap = _snapshot(db, snapshot_id)
+    res = impact_query(load_index(db, snap), key, depth)
+    if "error" in res:
         raise NotFound("graph node not found")
-    rev: dict[str, list[tuple[str, str]]] = {}
-    contains_children: dict[str, list[str]] = {}
-    for e in db.scalars(select(GraphEdge).where(GraphEdge.snapshot_id == snapshot_id, GraphEdge.resolution == "resolved")):
-        if e.kind in ("imports", "calls", "inherits", "handled_by"):
-            rev.setdefault(e.target_key, []).append((e.source_key, e.kind))
-        elif e.kind == "contains":
-            contains_children.setdefault(e.source_key, []).append(e.target_key)
-    seeds = [key]
-    if key.startswith("file:"):
-        seeds += _descendants(contains_children, key)
-    seen = {k: 0 for k in seeds}
-    queue = deque((k, 0) for k in seeds)
-    result: list[s.ImpactItem] = []
-    while queue and len(result) < 500:
-        cur, d = queue.popleft()
-        if d >= depth:
-            continue
-        for src, kind in rev.get(cur, []):
-            if src in seen:
-                continue
-            seen[src] = d + 1
-            n = nodes.get(src)
-            result.append(s.ImpactItem(key=src, kind=n.kind if n else None, label=n.label if n else None, depth=d + 1, via=kind))
-            queue.append((src, d + 1))
+    all_dep = res["direct_dependents"] + res["transitive_dependents"]
     return s.ImpactOut(
         key=key,
-        dependents=result,
-        truncated=len(result) >= 500,
-        note="Static, resolved references only. Dynamic dispatch, reflection, configuration and runtime wiring are not modelled.",
+        dependents=[s.ImpactItem(key=d["key"], kind=d["kind"], label=d["label"], depth=d["depth"], via=d["via"]) for d in all_dep],
+        truncated=res["truncated"],
+        note=" ".join(res["limitations"][:2]),
+        direct_dependents=res["direct_dependents"],
+        transitive_dependents=res["transitive_dependents"],
+        potentially_affected_routes=res["potentially_affected_routes"],
+        related_tests=res["related_tests"],
+        unresolved_references=res["unresolved_references"],
+        limitations=res["limitations"],
     )
-
-
-def _descendants(children: dict[str, list[str]], key: str) -> list[str]:
-    out, stack = [], list(children.get(key, []))
-    while stack:
-        k = stack.pop()
-        out.append(k)
-        stack.extend(children.get(k, []))
-    return out
 
 
 # ---------------------------------------------------------------- evidence

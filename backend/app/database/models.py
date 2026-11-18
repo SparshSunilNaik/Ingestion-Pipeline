@@ -67,7 +67,7 @@ class Snapshot(Base):
     """An immutable, analysed checkout of one exact commit."""
 
     __tablename__ = "snapshots"
-    __table_args__ = (UniqueConstraint("repository_id", "commit_sha", name="uq_snapshot_commit"),)
+    __table_args__ = (UniqueConstraint("repository_id", "commit_sha", "analyzer_version", name="uq_snapshot_commit_version"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     repository_id: Mapped[int] = mapped_column(ForeignKey("repositories.id", ondelete="CASCADE"), index=True)
@@ -248,3 +248,55 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class FileAnalysisCache(Base):
+    """Per-file parse result (language IR) keyed by content hash; enables incremental refresh."""
+
+    __tablename__ = "file_analyses"
+    __table_args__ = (UniqueConstraint("snapshot_id", "path", name="uq_file_analysis_path"), Index("ix_file_analyses_sha", "sha256", "analyzer_version"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), index=True)
+    path: Mapped[str] = mapped_column(String(1000))
+    sha256: Mapped[str] = mapped_column(String(64))
+    analyzer_version: Mapped[str] = mapped_column(String(32))
+    language: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class Conversation(Base):
+    """A repository Q&A session, pinned to exactly one snapshot (commit)."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    model: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16))  # user|assistant
+    content: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="complete")  # pending|complete|failed|cancelled
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # claims, limitations, retrieval, usage
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+
+
+class ApiSession(Base):
+    """Server-side browser session; only a SHA-256 of the session secret is stored."""
+
+    __tablename__ = "api_sessions"
+
+    id_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)

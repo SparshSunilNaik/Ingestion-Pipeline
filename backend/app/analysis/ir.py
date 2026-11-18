@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 
@@ -74,7 +74,11 @@ class FileAnalysis:
     routes: list[RouteInfo] = field(default_factory=list)
     exports: list[str] = field(default_factory=list)
     entry_points: list[EntryPointInfo] = field(default_factory=list)
-    instantiations: dict[str, str] = field(default_factory=dict)  # var -> constructor name
+    instantiations: dict[str, str] = field(default_factory=dict)  # module-level var -> constructor name
+    # callable qualified name -> {local variable -> constructor dotted name}; static, flow-insensitive
+    local_types: dict[str, dict[str, str]] = field(default_factory=dict)
+    default_export: str | None = None  # JS/TS: name of the symbol exported as default
+    package: str | None = None  # Go/Java package name
     errors: list[str] = field(default_factory=list)
     skipped_dynamic_calls: int = 0
 
@@ -83,3 +87,26 @@ class LanguageAnalyzer(Protocol):
     languages: frozenset[str]
 
     def analyze(self, path: str, source: bytes) -> FileAnalysis: ...
+
+
+def ir_to_dict(fa: FileAnalysis) -> dict:
+    return asdict(fa)
+
+
+def ir_from_dict(d: dict) -> FileAnalysis:
+    return FileAnalysis(
+        path=d["path"],
+        language=d["language"],
+        symbols=[SymbolInfo(**s) for s in d.get("symbols", [])],
+        imports=[ImportInfo(**{**i, "bindings": [ImportBinding(**b) for b in i.get("bindings", [])]}) for i in d.get("imports", [])],
+        calls=[CallInfo(**c) for c in d.get("calls", [])],
+        routes=[RouteInfo(**r) for r in d.get("routes", [])],
+        exports=list(d.get("exports", [])),
+        entry_points=[EntryPointInfo(**e) for e in d.get("entry_points", [])],
+        instantiations=dict(d.get("instantiations", {})),
+        local_types={k: dict(v) for k, v in d.get("local_types", {}).items()},
+        default_export=d.get("default_export"),
+        package=d.get("package"),
+        errors=list(d.get("errors", [])),
+        skipped_dynamic_calls=int(d.get("skipped_dynamic_calls", 0)),
+    )

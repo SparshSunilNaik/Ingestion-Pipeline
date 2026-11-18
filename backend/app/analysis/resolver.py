@@ -181,6 +181,69 @@ class ModuleIndex:
             return None
         return ranked[0]
 
+    # -- go --------------------------------------------------------------------
+    def load_go_modules(self, gomods: dict[str, str]) -> None:
+        """Map module paths declared in go.mod files to their directories."""
+        self.go_modules: list[tuple[str, str]] = []
+        for path, text in gomods.items():
+            for line in text.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "module":
+                    self.go_modules.append((parts[1].strip('"'), posixpath.dirname(path)))
+                    break
+        self.go_modules.sort(key=lambda m: -len(m[0]))
+
+    def go_package_files(self, directory: str) -> list[str]:
+        return sorted(p for p in self.paths if p.endswith(".go") and posixpath.dirname(p) == directory and not p.endswith("_test.go"))
+
+    def resolve_go(self, spec: str) -> Resolution:
+        for mod, mdir in getattr(self, "go_modules", []):
+            if spec == mod or spec.startswith(mod + "/"):
+                rel = spec[len(mod) :].lstrip("/")
+                directory = posixpath.join(mdir, rel) if mdir else rel
+                directory = directory.strip("/")
+                files = self.go_package_files(directory)
+                if files:
+                    return Resolution("resolved", target_path=files[0], candidates=files, package=directory)
+                return Resolution("unresolved")
+        first = spec.split("/")[0]
+        if "." not in first:
+            return Resolution("stdlib", package=spec)
+        segs = spec.split("/")
+        pkg = "/".join(segs[:3]) if first in ("github.com", "gitlab.com", "bitbucket.org") else "/".join(segs[:2]) if len(segs) > 1 else spec
+        return Resolution("external", package=pkg)
+
+    # -- java ------------------------------------------------------------------
+    def register_java(self, path: str, package: str | None, type_names: list[str]) -> None:
+        if not hasattr(self, "java_fqn"):
+            self.java_fqn: dict[str, str] = {}
+            self.java_packages: dict[str, list[str]] = {}
+        for t in type_names:
+            self.java_fqn[f"{package}.{t}" if package else t] = path
+        if package is not None:
+            self.java_packages.setdefault(package, []).append(path)
+
+    def resolve_java(self, spec: str, star: bool = False) -> Resolution:
+        fqn = getattr(self, "java_fqn", {})
+        pkgs = getattr(self, "java_packages", {})
+        if star:
+            files = pkgs.get(spec)
+            if files:
+                return Resolution("resolved", target_path=files[0], candidates=sorted(files), package=spec)
+        else:
+            # `import a.b.C` or static `import a.b.C.member`
+            probe = spec
+            while probe:
+                if probe in fqn:
+                    return Resolution("resolved", target_path=fqn[probe])
+                probe = probe.rsplit(".", 1)[0] if "." in probe else ""
+        if spec.startswith(("java.", "javax.", "jdk.", "sun.")):
+            return Resolution("stdlib", package=spec)
+        pkg = spec if star else spec.rsplit(".", 1)[0]
+        if any(p == pkg or p.startswith(pkg + ".") for p in pkgs):
+            return Resolution("unresolved")
+        return Resolution("external", package=pkg)
+
     # -- typescript / javascript --------------------------------------------
     def load_ts_aliases(self, configs: dict[str, str]) -> None:
         for path, text in configs.items():

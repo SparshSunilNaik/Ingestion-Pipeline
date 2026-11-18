@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.errors import AcquisitionError
+from app.core.isolation import Limits, popen_limited
 from app.core.logging import get_logger, redact
 
 log = get_logger(__name__)
@@ -56,8 +57,9 @@ class GitResult:
 
 
 class GitRunner:
-    def __init__(self, sandbox_dir: Path, allowed_protocols: str = "https", executable: str = "git") -> None:
+    def __init__(self, sandbox_dir: Path, allowed_protocols: str = "https", executable: str = "git", limits: Limits | None = None) -> None:
         self.sandbox_dir = sandbox_dir
+        self.limits = limits or Limits(memory_bytes=2048 * 1024 * 1024, max_processes=32, kill_on_close=True)
         self.allowed_protocols = allowed_protocols
         self.executable = executable
         sandbox_dir.mkdir(parents=True, exist_ok=True)
@@ -104,28 +106,31 @@ class GitRunner:
 
     def run(self, args: list[str], *, cwd: Path | None, timeout: float) -> GitResult:
         cmd = self.base_args() + args
-        creationflags = 0
-        start_new_session = False
+        extra: dict = {}
         if sys.platform == "win32":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        else:
-            start_new_session = True
-        proc = subprocess.Popen(
+            extra["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc, job = popen_limited(
             cmd,
+            self.limits,
             cwd=str(cwd) if cwd else str(self.sandbox_dir),
             env=self.env(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            creationflags=creationflags,
-            start_new_session=start_new_session,
+            **extra,
         )
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as exc:
-            _kill_tree(proc)
+            if job is not None:
+                job.close()  # kill-on-close terminates git and every helper it spawned
+            else:
+                _kill_tree(proc)
             proc.communicate()
             raise AcquisitionError(f"git {args[0]} timed out after {timeout:.0f}s") from exc
+        finally:
+            if job is not None:
+                job.close()
         return GitResult(
             stdout=out.decode("utf-8", errors="replace"),
             stderr=redact(err.decode("utf-8", errors="replace")),

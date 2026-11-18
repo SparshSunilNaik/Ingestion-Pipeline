@@ -15,7 +15,16 @@ from app.evidence.verifier import excerpt_hash
 
 
 class EvidenceCollector:
-    def __init__(self, snapshot_id: int, repository_id: int, commit_sha: str, file_lines: dict[str, list[str]], source_kinds: dict[str, SourceKind]) -> None:
+    def __init__(
+        self,
+        snapshot_id: int,
+        repository_id: int,
+        commit_sha: str,
+        file_lines: dict[str, list[str]],
+        source_kinds: dict[str, SourceKind],
+        analyzer_version: str = ANALYZER_VERSION,
+    ) -> None:
+        self.analyzer_version = analyzer_version
         self.snapshot_id = snapshot_id
         self.repository_id = repository_id
         self.commit_sha = commit_sha
@@ -44,7 +53,7 @@ class EvidenceCollector:
         if start > n:
             self.rejected += 1
             return None
-        eid = evidence_id(self.commit_sha, path, start, end, category.value, method.value, subject)
+        eid = evidence_id(self.commit_sha, path, start, end, category.value, method.value, subject, self.analyzer_version)
         if eid not in self.records:
             text = "\n".join(lines[start - 1 : end])
             self.records[eid] = {
@@ -58,7 +67,7 @@ class EvidenceCollector:
                 "category": category.value,
                 "subject": (subject or "")[:600] or None,
                 "extraction_method": method.value,
-                "analyzer_version": ANALYZER_VERSION,
+                "analyzer_version": self.analyzer_version,
                 "contract_version": CONTRACT_VERSION,
                 "verification_status": VerificationStatus.VERIFIED.value,
                 "source_kind": self.source_kinds.get(path, SourceKind.SOURCE).value,

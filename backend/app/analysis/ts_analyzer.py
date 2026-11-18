@@ -261,6 +261,10 @@ class _Walker:
                     self.walk(child, False, depth + 1)
                 self.scope.pop()
                 continue
+            if self.scope and value is not None and value.type == "new_expression":
+                ctor = _member_chain(value.child_by_field_name("constructor") or value)
+                if ctor:
+                    self.r.local_types.setdefault(self.current_callable(), {})[name] = ctor
             if not self.scope:
                 if exported:
                     self.add_symbol("variable", name, decl, exported)
@@ -305,6 +309,9 @@ class _Walker:
             self.walk(decl, True, depth + 1)
             if is_default:
                 self.r.exports.append("default")
+                dname = decl.child_by_field_name("name")
+                if dname is not None:
+                    self.r.default_export = _text(dname)
             return True
         for c in node.named_children:
             if c.type == "export_clause":
@@ -313,8 +320,11 @@ class _Walker:
                         self.r.exports.append(_text(s.child_by_field_name("alias")) or _text(s.child_by_field_name("name")))
             elif is_default:
                 self.r.exports.append("default")
+                if c.type == "identifier":
+                    self.r.default_export = _text(c)
                 if c.type in ("function_expression", "function", "arrow_function", "class"):
                     name = _text(c.child_by_field_name("name")) or "default"
+                    self.r.default_export = name
                     if c.type == "class":
                         self.add_symbol("class", name, c, True)
                     else:
@@ -393,6 +403,13 @@ class _Walker:
                             framework="Express", method=prop.upper(), path=path, handler=handler, line=_line(node), end_line=_end_line(node), receiver=receiver
                         )
                     )
+        return False
+
+    def on_new_expression(self, node: Node, exported: bool, depth: int) -> bool:
+        ctor = node.child_by_field_name("constructor")
+        chain = _member_chain(ctor) if ctor is not None else None
+        if chain and chain.split(".")[0] not in _JS_GLOBALS:
+            self.r.calls.append(CallInfo(callee=chain, caller=self.current_callable(), line=_line(node), end_line=_end_line(node)))
         return False
 
     def on_assignment_expression(self, node: Node, exported: bool, depth: int) -> bool:

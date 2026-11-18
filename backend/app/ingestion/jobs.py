@@ -71,6 +71,21 @@ def create_agent_job(session: Session, snapshot_id: int, repository_id: int, mod
     return job, True
 
 
+def create_qa_job(session: Session, snapshot_id: int, repository_id: int, question_message_id: int, reply_message_id: int) -> Job:
+    job = Job(
+        kind="qa",
+        repository_id=repository_id,
+        snapshot_id=snapshot_id,
+        requested_url="",
+        params={"question_message_id": question_message_id, "reply_message_id": reply_message_id},
+        status="queued",
+        stage="queued",
+    )
+    session.add(job)
+    session.flush()
+    return job
+
+
 def claim_next_job(session: Session, worker_id: str, lease_seconds: int) -> int | None:
     """Atomically claim the oldest queued job. Safe against concurrent workers:
     the UPDATE re-checks ``status='queued'`` and SQLite serialises writers."""

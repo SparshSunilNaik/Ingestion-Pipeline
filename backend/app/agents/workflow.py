@@ -238,7 +238,7 @@ def _first_object(raw: str) -> tuple[dict | None, str | None]:
         return None, f"{exc.msg} at character {exc.pos}"
 
 
-def parse_action(text: str) -> RequestAction | FinalAction:
+def parse_action(text: str, adapter: TypeAdapter[Any] | None = None) -> Any:
     """Parse the model output: first complete JSON object; tolerate fences/trailing text; repair brackets."""
     raw = text.strip()
     data, error = _first_object(raw)
@@ -249,7 +249,7 @@ def parse_action(text: str) -> RequestAction | FinalAction:
     if data is None:
         raise AgentError(f"Model output is not valid JSON ({error})", details={"kind": "bad_output"})
     try:
-        action = AgentAction.validate_python(data)
+        action = (adapter or AgentAction).validate_python(data)
     except ValidationError as exc:
         raise AgentError(
             f"Model output does not match the contract: {exc.error_count()} error(s)",
@@ -260,57 +260,60 @@ def parse_action(text: str) -> RequestAction | FinalAction:
     return action
 
 
+class ClaimValidator:
+    """Verifies cited evidence IDs against one snapshot and assigns each claim's basis."""
+
+    def __init__(self, session: Session, snapshot: Snapshot, cited: set[str]) -> None:
+        reader = SnapshotReader(session, snapshot)
+        rows = {e.id: e for e in session.scalars(select(Evidence).where(Evidence.snapshot_id == snapshot.id, Evidence.id.in_(cited)))} if cited else {}
+        self.valid: dict[str, Evidence] = {i: e for i, e in rows.items() if verify_evidence(reader, e).ok}
+        self.stats: dict[str, Any] = {
+            "claims": 0,
+            "unsupported_claims": 0,
+            "documentation_only_claims": 0,
+            "source_claims": 0,
+            "invalid_evidence_ids": sorted(cited - set(self.valid))[:50],
+        }
+
+    def claim(self, c: AgentClaim) -> Claim:
+        self.stats["claims"] += 1
+        ids = [i for i in dict.fromkeys(c.evidence_ids) if i in self.valid]
+        basis: Basis
+        note: str | None
+        kinds = {self.valid[i].source_kind for i in ids}
+        if not ids:
+            basis, note = "unsupported", "no valid evidence cited; treat as unverified model output"
+            self.stats["unsupported_claims"] += 1
+        elif kinds & {"source", "test"}:
+            basis, note = "source_evidence", None
+            self.stats["source_claims"] += 1
+        elif kinds <= {"documentation"}:
+            basis, note = "documentation_claim", "supported by documentation only"
+            self.stats["documentation_only_claims"] += 1
+        else:
+            basis, note = "configuration_evidence", None
+        invalid = [i for i in c.evidence_ids if i not in self.valid]
+        if invalid and ids:
+            note = ((note + "; ") if note else "") + f"{len(invalid)} invalid evidence ID(s) removed"
+        return Claim(
+            statement=c.statement.strip(),
+            basis=basis,
+            evidence_ids=ids,
+            note=f"{note} (model confidence: {c.confidence})" if note else f"model confidence: {c.confidence}",
+        )
+
+
 def validate_report(session: Session, snapshot: Snapshot, report: FinalReport) -> tuple[list[Section], dict]:
-    reader = SnapshotReader(session, snapshot)
     cited = {i for s in report.sections for c in s.claims for i in c.evidence_ids}
-    rows = {e.id: e for e in session.scalars(select(Evidence).where(Evidence.snapshot_id == snapshot.id, Evidence.id.in_(cited)))} if cited else {}
-    valid: dict[str, Evidence] = {}
-    for i, e in rows.items():
-        if verify_evidence(reader, e).ok:
-            valid[i] = e
-    stats: dict[str, Any] = {
-        "claims": 0,
-        "unsupported_claims": 0,
-        "documentation_only_claims": 0,
-        "source_claims": 0,
-        "invalid_evidence_ids": sorted(cited - set(valid))[:50],
-        "dropped_sections": [],
-    }
+    validator = ClaimValidator(session, snapshot, cited)
+    stats = validator.stats
+    stats["dropped_sections"] = []
     sections: list[Section] = []
     for s in report.sections:
         if s.title not in ALLOWED_SECTIONS:
             stats["dropped_sections"].append(s.title[:80])
             continue
-        claims: list[Claim] = []
-        for c in s.claims:
-            stats["claims"] += 1
-            ids = [i for i in dict.fromkeys(c.evidence_ids) if i in valid]
-            basis: Basis
-            note: str | None
-            kinds = {valid[i].source_kind for i in ids}
-            if not ids:
-                basis, note = "unsupported", "no valid evidence cited; treat as unverified model output"
-                stats["unsupported_claims"] += 1
-            elif kinds & {"source", "test"}:
-                basis, note = "source_evidence", None
-                stats["source_claims"] += 1
-            elif kinds <= {"documentation"}:
-                basis, note = "documentation_claim", "supported by documentation only"
-                stats["documentation_only_claims"] += 1
-            else:
-                basis, note = "configuration_evidence", None
-            invalid = [i for i in c.evidence_ids if i not in valid]
-            if invalid and ids:
-                note = ((note + "; ") if note else "") + f"{len(invalid)} invalid evidence ID(s) removed"
-            claims.append(
-                Claim(
-                    statement=c.statement.strip(),
-                    basis=basis,
-                    evidence_ids=ids,
-                    note=f"{note} (model confidence: {c.confidence})" if note else f"model confidence: {c.confidence}",
-                )
-            )  # type: ignore[arg-type]
-        sections.append(Section(title=s.title, claims=claims))
+        sections.append(Section(title=s.title, claims=[validator.claim(c) for c in s.claims]))
     return sections, stats
 
 

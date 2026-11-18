@@ -27,6 +27,8 @@ class RepositoryLimits(BaseSettings):
     clone_timeout_seconds: int = 180
     max_repo_storage_bytes: int = 500 * 1024 * 1024
     max_tracked_files: int = 50_000
+    git_memory_mb: int = 2048  # per git process (Windows Job Object / POSIX RLIMIT_AS)
+    git_max_processes: int = 32
 
 
 class OpenCodeSettings(BaseSettings):
@@ -56,12 +58,23 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
-    start_worker: bool = True
+    start_worker: bool = True  # legacy switch; False forces worker_mode="none"
     worker_poll_seconds: float = 1.0
     job_lease_seconds: int = 120
     # Only "https" is allowed in production. Tests may set "file" to clone local fixtures.
     git_allowed_protocols: str = "https"
     git_executable: str = "git"
+    # Authentication: "token" (default) or "disabled" (tests / trusted single-user setups only).
+    auth_mode: str = "token"
+    api_token: SecretStr | None = None  # optional explicit token; otherwise generated into <data_dir>/api-token
+    session_ttl_hours: int = 12
+    max_request_bytes: int = 256 * 1024
+    allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1", "[::1]", "testserver"])
+    # Worker: "subprocess" (API supervises a separate worker process), "inprocess" (thread), "external", "none".
+    worker_mode: str = "subprocess"
+    job_timeout_seconds: dict[str, int] = Field(default_factory=lambda: {"ingest": 1200, "agent_report": 900, "qa": 600, "selftest": 60})
+    job_cancel_grace_seconds: float = 15.0
+    enable_selftest_jobs: bool = False
 
     limits: RepositoryLimits = Field(default_factory=RepositoryLimits)
     opencode: OpenCodeSettings = Field(default_factory=OpenCodeSettings)

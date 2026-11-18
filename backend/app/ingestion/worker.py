@@ -6,7 +6,7 @@ import threading
 import uuid
 
 from app.agents.runtime import OpenCodeRuntime
-from app.agents.service import run_agent_job
+from app.agents.service import run_agent_job, run_qa_job
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.database.engine import session_factory
@@ -53,6 +53,8 @@ class Worker:
                     run_ingest(session, self.pipeline, job_id)
                 elif job.kind == "agent_report":
                     run_agent_job(session, self.runtime, job_id)
+                elif job.kind == "qa":
+                    run_qa_job(session, self.runtime, job_id)
                 else:
                     jobstore.finish_job(session, job_id, "failed", error_code="unknown_job_kind", error_message=job.kind)
             finally:

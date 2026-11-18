@@ -10,7 +10,7 @@ from app.main import create_app
 def client(settings, remotes, sample_remote):
     pipeline = IngestionPipeline(settings, clone_url_resolver=remotes)
     app = create_app(settings, pipeline=pipeline)
-    with TestClient(app) as c:
+    with TestClient(app, headers={"Authorization": f"Bearer {app.state.auth.token}"}) as c:
         c.worker = Worker(settings, app.state.runtime, pipeline)  # drive jobs synchronously
         yield c
 

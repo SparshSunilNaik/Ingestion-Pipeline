@@ -59,7 +59,66 @@ def parse_manifest(path: str, text: str) -> ManifestInfo | None:
         return _pyproject(path, text)
     if name.startswith("requirements") and name.endswith(".txt"):
         return _requirements(path, text, scope="dev" if "dev" in name or "test" in name else "runtime")
+    if name == "go.mod":
+        return _go_mod(path, text)
+    if name == "pom.xml":
+        return _pom(path, text)
+    if name in ("build.gradle", "build.gradle.kts"):
+        return _gradle(path, text)
     return None
+
+
+def _go_mod(path: str, text: str) -> ManifestInfo:
+    info = ManifestInfo(path=path, kind="go.mod")
+    in_block = False
+    for i, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("//")[0].strip()
+        indirect = "// indirect" in raw
+        if line.startswith("module "):
+            info.metadata["module"] = line.split()[1]
+        elif line.startswith("go ") and len(line.split()) == 2:
+            info.metadata["go"] = line.split()[1]
+        elif line.startswith("require ("):
+            in_block = True
+        elif in_block and line == ")":
+            in_block = False
+        elif in_block or line.startswith("require "):
+            parts = line.removeprefix("require ").split()
+            if len(parts) >= 2:
+                info.dependencies.append(DeclaredDependency("go", parts[0], parts[1], "indirect" if indirect else "runtime", path, i))
+    return info
+
+
+_POM_DEP = re.compile(r"<dependency>(.*?)</dependency>", re.S)
+_POM_FIELDS = re.compile(r"<(groupId|artifactId|version|scope)>\s*([^<]+?)\s*</(?:groupId|artifactId|version|scope)>")
+
+
+def _pom(path: str, text: str) -> ManifestInfo:
+    """Extract <dependency> blocks with a non-validating regex scan (no XML entity expansion)."""
+    info = ManifestInfo(path=path, kind="pom.xml")
+    for m in _POM_DEP.finditer(text):
+        tags = dict(_POM_FIELDS.findall(m.group(1)))
+        if "groupId" in tags and "artifactId" in tags:
+            line = text.count("\n", 0, m.start()) + 1
+            scope = "dev" if tags.get("scope") == "test" else "runtime"
+            info.dependencies.append(DeclaredDependency("maven", f"{tags['groupId']}:{tags['artifactId']}", tags.get("version"), scope, path, line))
+    return info
+
+
+_GRADLE_DEP = re.compile(
+    r"""^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s*\(?\s*["']([^:"']+):([^:"']+)(?::([^"']+))?["']"""
+)
+
+
+def _gradle(path: str, text: str) -> ManifestInfo:
+    """Pattern extraction of string-notation dependencies. The build script is never executed."""
+    info = ManifestInfo(path=path, kind="gradle")
+    for i, raw in enumerate(text.splitlines(), 1):
+        m = _GRADLE_DEP.match(raw)
+        if m:
+            scope = "dev" if m.group(1).startswith("test") else "runtime"
+            info.dependencies.append(DeclaredDependency("maven", f"{m.group(2)}:{m.group(3)}", m.group(4), scope, path, i))
+    return info
 
 
 def _package_json(path: str, text: str) -> ManifestInfo:

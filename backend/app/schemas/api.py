@@ -220,6 +220,12 @@ class ImpactOut(BaseModel):
     dependents: list[ImpactItem]
     truncated: bool
     note: str
+    direct_dependents: list[dict[str, Any]] = Field(default_factory=list)
+    transitive_dependents: list[dict[str, Any]] = Field(default_factory=list)
+    potentially_affected_routes: list[dict[str, Any]] = Field(default_factory=list)
+    related_tests: list[str] = Field(default_factory=list)
+    unresolved_references: list[dict[str, Any]] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
 
 
 class DependencyOut(ORM):

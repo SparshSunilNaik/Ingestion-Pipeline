@@ -78,13 +78,16 @@ class ReadOnlyGateway:
         if rec is None or lines is None:
             return None
         kind = CATEGORY_TO_SOURCE_KIND.get(rec.category, SourceKind.SOURCE)
-        col = EvidenceCollector(self.snapshot.id, self.snapshot.repository_id, self.snapshot.commit_sha, {path: lines}, {path: kind})
+        col = EvidenceCollector(
+            self.snapshot.id, self.snapshot.repository_id, self.snapshot.commit_sha, {path: lines}, {path: kind}, self.snapshot.analyzer_version
+        )
         eid = col.add(path, start, end, EvidenceCategory.RETRIEVED_SOURCE, ExtractionMethod.GATEWAY_READ, subject)
         if eid is None:
             return None
         if self.session.get(Evidence, eid) is None:
             self.session.add(Evidence(**col.records[eid]))
-            self.session.flush()
+            # Commit immediately: never hold an SQLite write lock across a (slow) model call.
+            self.session.commit()
         return eid
 
     def execute(self, req: ReadFileRange | SearchCode | GetSymbol | ListDirectory | GraphNeighbors) -> dict:

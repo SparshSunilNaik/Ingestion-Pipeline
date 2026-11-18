@@ -70,3 +70,66 @@ def run_agent_job(session: Session, runtime: OpenCodeRuntime, job_id: int) -> No
         session.rollback()
         log.exception("agent job %s crashed", job_id)
         jobstore.finish_job(session, job_id, "failed", error_code="internal_error", error_message=type(exc).__name__)
+
+
+def run_qa_job(session: Session, runtime: OpenCodeRuntime, job_id: int) -> None:
+    """Answer one queued question. The assistant message is created up-front as `pending`."""
+    from app.agents.qa import answer_question
+    from app.database.models import Conversation, Message
+
+    job = session.get(Job, job_id)
+    assert job is not None
+    params = job.params or {}
+    reply = session.get(Message, params.get("reply_message_id"))
+    question = session.get(Message, params.get("question_message_id"))
+    try:
+        if reply is None or question is None:
+            raise AgentError("Q&A job references missing messages")
+        conversation = session.get(Conversation, question.conversation_id)
+        snapshot = session.get(Snapshot, conversation.snapshot_id) if conversation else None
+        if conversation is None or snapshot is None or snapshot.status != "ready":
+            raise AgentError("Conversation snapshot is not available")
+        if not runtime.enabled:
+            raise AgentUnavailable("Agent runtime is disabled by configuration")
+        model = conversation.model
+        jobstore.update_progress(session, job_id, "retrieving", 10, "Retrieving evidence")
+        adapter = runtime.adapter()
+        try:
+            adapter.resolve_model(model)  # never substitutes a different model
+            jobstore.update_progress(session, job_id, "investigating", 30, f"Investigating with {model}")
+
+            def generate(prompt: str) -> tuple[str, dict]:
+                res = adapter.generate(prompt, model)
+                return res.text, {"latency_ms": res.latency_ms, "prompt_chars": res.prompt_chars, "response_chars": res.response_chars}
+
+            result = answer_question(session, snapshot, conversation, question, generate, lambda: jobstore.cancel_requested(session, job_id))
+        finally:
+            adapter.close()
+        reply = session.get(Message, reply.id)
+        assert reply is not None
+        reply.content = result.pop("summary")
+        reply.payload = {**result, "model": model}
+        reply.status = "complete"
+        session.commit()
+        jobstore.finish_job(session, job_id, "succeeded")
+    except AppError as exc:
+        session.rollback()
+        kind = exc.details.get("kind") if isinstance(exc.details, dict) else None
+        status = "cancelled" if kind == "cancelled" else "failed"
+        if reply is not None:
+            r = session.get(Message, reply.id)
+            if r is not None:
+                r.status = status
+                r.content = exc.message
+                r.payload = {"error": exc.code, "kind": kind}
+                session.commit()
+        jobstore.finish_job(session, job_id, status, error_code=exc.code if status == "failed" else "cancelled", error_message=exc.message)
+    except Exception as exc:
+        session.rollback()
+        log.exception("qa job %s crashed", job_id)
+        if reply is not None:
+            r = session.get(Message, reply.id)
+            if r is not None:
+                r.status, r.content = "failed", "Internal error while answering"
+                session.commit()
+        jobstore.finish_job(session, job_id, "failed", error_code="internal_error", error_message=type(exc).__name__)

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.analysis.engine import SnapshotAnalyzer
 from app.core.config import Settings
 from app.core.errors import AcquisitionError, AppError, LimitExceeded
+from app.core.isolation import Limits, restrict_to_current_user
 from app.core.logging import get_logger
 from app.database.models import FileRecord, Job, Repository, Snapshot
 from app.evidence.contract import ANALYZER_VERSION
@@ -50,7 +51,8 @@ def _dir_size(path: Path) -> int:
 class IngestionPipeline:
     def __init__(self, settings: Settings, clone_url_resolver: Callable[[GitHubRepoRef], str] | None = None) -> None:
         self.settings = settings
-        self.git = GitRepositoryClient(GitRunner(settings.git_sandbox_dir, settings.git_allowed_protocols, settings.git_executable))
+        limits = Limits(memory_bytes=settings.limits.git_memory_mb * 1024 * 1024, max_processes=settings.limits.git_max_processes, kill_on_close=True)
+        self.git = GitRepositoryClient(GitRunner(settings.git_sandbox_dir, settings.git_allowed_protocols, settings.git_executable, limits))
         self.clone_url_for = clone_url_resolver or (lambda ref: ref.clone_url)
 
     def snapshot_dir(self, repo: Repository, sha: str) -> Path:
@@ -76,8 +78,10 @@ class IngestionPipeline:
         if remote.default_branch:
             repo.default_branch = remote.default_branch
 
-        cached = session.scalar(select(Snapshot).where(Snapshot.repository_id == repo.id, Snapshot.commit_sha == remote.commit_sha))
-        if cached is not None and cached.status == "ready" and cached.analyzer_version == ANALYZER_VERSION:
+        cached = session.scalar(
+            select(Snapshot).where(Snapshot.repository_id == repo.id, Snapshot.commit_sha == remote.commit_sha, Snapshot.analyzer_version == ANALYZER_VERSION)
+        )
+        if cached is not None and cached.status == "ready":
             repo.current_snapshot_id = cached.id
             session.commit()
             jobstore.update_progress(session, job_id, "cached", 95, f"Reusing analysed snapshot {remote.commit_sha[:12]}")
@@ -87,6 +91,7 @@ class IngestionPipeline:
         staging = self.settings.staging_dir / f"job-{job_id}-{uuid.uuid4().hex[:8]}"
         checkout = staging / "checkout"
         staging.mkdir(parents=True, exist_ok=False)
+        restrict_to_current_user(staging)
         promoted: Path | None = None
         snapshot: Snapshot | None = None
         created_snapshot = False
@@ -107,11 +112,15 @@ class IngestionPipeline:
 
             # Atomic promotion into the content-addressed snapshot location.
             final = self.snapshot_dir(repo, sha)
-            existing = session.scalar(select(Snapshot).where(Snapshot.repository_id == repo.id, Snapshot.commit_sha == sha))
+            # One row per (commit, analyzer version): older analyses of this commit stay untouched.
+            existing = session.scalar(
+                select(Snapshot).where(Snapshot.repository_id == repo.id, Snapshot.commit_sha == sha, Snapshot.analyzer_version == ANALYZER_VERSION)
+            )
+            owned = session.scalar(select(Snapshot.id).where(Snapshot.repository_id == repo.id, Snapshot.commit_sha == sha).limit(1))
             final.parent.mkdir(parents=True, exist_ok=True)
             if final.exists():
-                # Same commit = same content. Keep the existing directory if a snapshot row owns it.
-                if existing is None:
+                # Same commit = same content. Keep the directory if any snapshot row (any analyzer version) uses it.
+                if owned is None:
                     rmtree_safe(final)
                     os.replace(checkout, final)
                     promoted = final
@@ -127,7 +136,6 @@ class IngestionPipeline:
             else:
                 snapshot = existing
                 snapshot.status = "analyzing"
-                snapshot.analyzer_version = ANALYZER_VERSION
                 snapshot.storage_path = str(final)
                 session.query(FileRecord).filter(FileRecord.snapshot_id == snapshot.id).delete()
             snapshot.default_branch = branch

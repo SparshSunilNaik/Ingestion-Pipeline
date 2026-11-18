@@ -10,29 +10,32 @@ from __future__ import annotations
 import posixpath
 import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from app.analysis.docs import split_sections
-from app.analysis.ir import FileAnalysis, LanguageAnalyzer, SymbolInfo
+from app.analysis.go_analyzer import GoAnalyzer
+from app.analysis.ir import FileAnalysis, LanguageAnalyzer, SymbolInfo, ir_from_dict, ir_to_dict
+from app.analysis.java_analyzer import JavaAnalyzer
 from app.analysis.manifests import PYTHON_IMPORT_TO_DIST, ManifestInfo, normalize_python_name, parse_manifest
 from app.analysis.python_analyzer import PythonAnalyzer
 from app.analysis.resolver import ModuleIndex, Resolution
 from app.analysis.ts_analyzer import TypeScriptAnalyzer
 from app.core.logging import get_logger
-from app.database.models import Dependency, Evidence, FileRecord, Finding, GraphEdge, GraphNode, Repository, Snapshot, Symbol
+from app.database.models import Dependency, Evidence, FileAnalysisCache, FileRecord, Finding, GraphEdge, GraphNode, Repository, Snapshot, Symbol
 from app.evidence.collector import EvidenceCollector
-from app.evidence.contract import CATEGORY_TO_SOURCE_KIND, EvidenceCategory, ExtractionMethod, SourceKind
+from app.evidence.contract import ANALYZER_VERSION, CATEGORY_TO_SOURCE_KIND, EvidenceCategory, ExtractionMethod, SourceKind
 from app.graph.builder import GraphBuilder, central_files, file_key, most_referenced, pkg_key, sym_key
 from app.ingestion.inventory import resolve_inside
 from app.search.fts import index_files
 
 log = get_logger(__name__)
 
-ANALYZERS: list[LanguageAnalyzer] = [PythonAnalyzer(), TypeScriptAnalyzer()]
+ANALYZERS: list[LanguageAnalyzer] = [PythonAnalyzer(), TypeScriptAnalyzer(), GoAnalyzer(), JavaAnalyzer()]
 MAX_UNRESOLVED_CALL_EDGES_PER_FILE = 200
 
 FRAMEWORKS: dict[tuple[str, str], tuple[str, str]] = {
@@ -73,9 +76,46 @@ FRAMEWORKS: dict[tuple[str, str], tuple[str, str]] = {
     ("npm", "vite"): ("Vite", "build tool"),
     ("npm", "typescript"): ("TypeScript", "language tooling"),
     ("npm", "electron"): ("Electron", "desktop framework"),
+    ("go", "github.com/gin-gonic/gin"): ("Gin", "web framework"),
+    ("go", "github.com/labstack/echo"): ("Echo", "web framework"),
+    ("go", "github.com/go-chi/chi"): ("chi", "HTTP router"),
+    ("go", "github.com/gorilla/mux"): ("gorilla/mux", "HTTP router"),
+    ("go", "gorm.io/gorm"): ("GORM", "ORM"),
+    ("go", "github.com/stretchr/testify"): ("testify", "test framework"),
+}
+
+# Java imports are package names; frameworks are detected by package prefix.
+FRAMEWORK_PREFIXES: dict[tuple[str, str], tuple[str, str]] = {
+    ("maven", "org.springframework"): ("Spring", "application framework"),
+    ("maven", "jakarta.persistence"): ("Jakarta Persistence", "ORM"),
+    ("maven", "javax.persistence"): ("Java Persistence API", "ORM"),
+    ("maven", "org.hibernate"): ("Hibernate", "ORM"),
+    ("maven", "org.junit"): ("JUnit", "test framework"),
+    ("maven", "io.quarkus"): ("Quarkus", "application framework"),
+    ("maven", "io.micronaut"): ("Micronaut", "application framework"),
 }
 
 _DOCKER_CMD = re.compile(r"^\s*(CMD|ENTRYPOINT|EXPOSE)\s+(.+)$", re.I)
+
+
+CLASS_KINDS = {"class", "interface", "enum"}
+PARSED_LANGUAGES = {"python", "typescript", "javascript", "go", "java"}
+ECOSYSTEM = {"python": "python", "typescript": "npm", "javascript": "npm", "go": "go", "java": "maven"}
+MAX_DISPATCH_CANDIDATES = 5
+
+
+@dataclass
+class Target:
+    """Result of resolving a reference. `via` explains how it was resolved (shown to users)."""
+
+    key: str
+    resolution: str  # resolved|ambiguous|external|unresolved
+    via: str
+    candidates: list[str] = field(default_factory=list)
+
+
+def _method_for(language: str) -> ExtractionMethod:
+    return ExtractionMethod.PYTHON_AST if language == "python" else ExtractionMethod.TREE_SITTER
 
 
 class SnapshotAnalyzer:
@@ -89,9 +129,24 @@ class SnapshotAnalyzer:
         self.findings: list[dict[str, Any]] = []
         self.dependencies: list[dict[str, Any]] = []
         self.symbol_rows: list[dict[str, Any]] = []
+        self.ir_rows: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
-    def run(self) -> dict[str, Any]:
+    def _reusable_ir(self) -> dict[tuple[str, str], dict]:
+        """Parse results of earlier snapshots of this repository with the same analyzer version."""
+        rows = self.session.execute(
+            select(FileAnalysisCache.path, FileAnalysisCache.sha256, FileAnalysisCache.payload)
+            .join(Snapshot, Snapshot.id == FileAnalysisCache.snapshot_id)
+            .where(
+                Snapshot.repository_id == self.repo.id,
+                Snapshot.id != self.snapshot.id,
+                Snapshot.status == "ready",
+                FileAnalysisCache.analyzer_version == ANALYZER_VERSION,
+            )
+        ).all()
+        return {(r.path, r.sha256): r.payload for r in rows}
+
+    def run(self, incremental: bool = True) -> dict[str, Any]:
         files = list(self.session.query(FileRecord).filter(FileRecord.snapshot_id == self.snapshot.id))
         self.files = {f.path: f for f in files}
         analyzed = [f for f in files if f.analyzed]
@@ -103,20 +158,38 @@ class SnapshotAnalyzer:
             contents[f.path] = p.read_bytes().decode("utf-8", errors="replace")
         lines = {p: c.splitlines() for p, c in contents.items()}
         kinds = {f.path: CATEGORY_TO_SOURCE_KIND.get(f.category, SourceKind.SOURCE) for f in analyzed}
-        self.ev = EvidenceCollector(self.snapshot.id, self.repo.id, self.snapshot.commit_sha, lines, kinds)
+        self.ev = EvidenceCollector(self.snapshot.id, self.repo.id, self.snapshot.commit_sha, lines, kinds, self.snapshot.analyzer_version)
         self.lines = lines
 
         for f in analyzed:
             self.g.node(file_key(f.path), "file", f.path, f.path, 1, f.line_count or 1, language=f.language, category=f.category)
 
-        # 1. parse code
+        # 1. parse code (reusing identical files from earlier snapshots when possible)
+        reusable = self._reusable_ir() if incremental else {}
         analyses: dict[str, FileAnalysis] = {}
         for f in analyzed:
-            if f.language in ("python", "typescript", "javascript") and f.category in ("source", "test"):
-                analyzer = next(a for a in ANALYZERS if f.language in a.languages)
-                fa = analyzer.analyze(f.path, contents[f.path].encode("utf-8"))
+            if f.language in PARSED_LANGUAGES and f.category in ("source", "test") and f.path in contents:
+                cached = reusable.get((f.path, f.sha256 or ""))
+                if cached is not None:
+                    fa = ir_from_dict(cached)
+                    self.stats["parsed_files_reused"] += 1
+                else:
+                    analyzer = next(a for a in ANALYZERS if f.language in a.languages)
+                    fa = analyzer.analyze(f.path, contents[f.path].encode("utf-8"))
+                    self.stats["parsed_files_fresh"] += 1
                 analyses[f.path] = fa
+                self.ir_rows.append(
+                    {
+                        "snapshot_id": self.snapshot.id,
+                        "path": f.path,
+                        "sha256": f.sha256 or "",
+                        "analyzer_version": ANALYZER_VERSION,
+                        "language": f.language,
+                        "payload": ir_to_dict(fa),
+                    }
+                )
                 self.stats["parsed_files"] += 1
+                self.stats[f"parsed_{f.language}"] += 1
                 if fa.errors:
                     self.stats["files_with_parse_issues"] += 1
                 self.stats["skipped_dynamic_calls"] += fa.skipped_dynamic_calls
@@ -132,22 +205,32 @@ class SnapshotAnalyzer:
 
         # 3. module index
         index = ModuleIndex({f.path for f in analyzed}, set(self.files))
-        ts_configs = {p: c for p, c in contents.items() if posixpath.basename(p) in ("tsconfig.json", "jsconfig.json")}
-        index.load_ts_aliases(ts_configs)
+        index.load_ts_aliases({p: c for p, c in contents.items() if posixpath.basename(p) in ("tsconfig.json", "jsconfig.json")})
+        index.load_go_modules({p: c for p, c in contents.items() if posixpath.basename(p) == "go.mod"})
+        for path, fa in analyses.items():
+            if fa.language == "java":
+                index.register_java(path, fa.package, [s.name for s in fa.symbols if s.parent is None])
         self.index = index
         self.analyses = analyses
 
-        # 4. symbols, imports, calls, routes
+        # 4. symbols, imports, inheritance (hierarchy first), calls, routes
         self.bindings: dict[str, dict[str, tuple]] = {}
+        self.stars: dict[str, list[str]] = defaultdict(list)
         self.top_symbols: dict[str, dict[str, SymbolInfo]] = {}
-        self.imported_packages: dict[tuple[str, str], list[str]] = defaultdict(list)  # (eco, pkg) -> evidence ids
+        self.sym_kind: dict[str, str] = {}
+        self.bases: dict[str, list[str]] = defaultdict(list)
+        self.subclasses: dict[str, list[str]] = defaultdict(list)
+        self.unresolved_bases: Counter[str] = Counter()
+        self._scope_cache: dict[str, dict[str, tuple[str, SymbolInfo]]] = {}
+        self.imported_packages: dict[tuple[str, str], list[str]] = defaultdict(list)
         for path, fa in analyses.items():
             self._symbols(path, fa)
         for path, fa in analyses.items():
             self._imports(path, fa)
         for path, fa in analyses.items():
-            self._calls(path, fa)
             self._inheritance(path, fa)
+        for path, fa in analyses.items():
+            self._calls(path, fa)
             self._routes(path, fa, "next" in declared_npm)
             self._entry_points(path, fa)
 
@@ -160,17 +243,17 @@ class SnapshotAnalyzer:
         self._ops_files(analyzed)
 
         # 7. persist
-        summary = self._persist(contents)
-        return summary
+        return self._persist(contents)
 
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ symbols
     def _symbols(self, path: str, fa: FileAnalysis) -> None:
         tops: dict[str, SymbolInfo] = {}
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
+        method = _method_for(fa.language)
         for s in fa.symbols:
             eid = self.ev.add(path, s.start_line, s.end_line, EvidenceCategory.SYMBOL_DEFINITION, method, f"{s.kind} {s.qualified_name}")
             key = sym_key(path, s.qualified_name)
-            self.g.node(key, s.kind, s.qualified_name, path, s.start_line, s.end_line, exported=s.exported)
+            self.g.node(key, s.kind, s.qualified_name, path, s.start_line, s.end_line, exported=s.exported, language=fa.language)
+            self.sym_kind[key] = s.kind
             parent_key = sym_key(path, s.parent) if s.parent else file_key(path)
             self.g.edge(parent_key, key, "contains", "resolved", eid)
             self.symbol_rows.append(
@@ -193,36 +276,70 @@ class SnapshotAnalyzer:
             self.stats[f"symbols_{s.kind}"] += 1
         self.top_symbols[path] = tops
 
+    def _scope_tops(self, path: str) -> dict[str, tuple[str, SymbolInfo]]:
+        """Names visible without import: the file's top-level symbols, plus (Go/Java) the whole package."""
+        if path in self._scope_cache:
+            return self._scope_cache[path]
+        fa = self.analyses.get(path)
+        out: dict[str, tuple[str, SymbolInfo]] = {}
+        if fa is not None and fa.language in ("go", "java"):
+            directory = posixpath.dirname(path)
+            for other, ofa in self.analyses.items():
+                if ofa.language == fa.language and posixpath.dirname(other) == directory and ofa.package == fa.package:
+                    for name, sym in self.top_symbols.get(other, {}).items():
+                        out.setdefault(name, (other, sym))
+        for name, sym in self.top_symbols.get(path, {}).items():
+            out[name] = (path, sym)
+        self._scope_cache[path] = out
+        return out
+
+    # ------------------------------------------------------------------ imports
     def _resolve_import(self, path: str, fa: FileAnalysis, spec: str, level: int, imported: str | None) -> Resolution:
         if fa.language == "python":
             return self.index.resolve_python(path, spec, level, imported)
+        if fa.language == "go":
+            return self.index.resolve_go(spec)
+        if fa.language == "java":
+            return self.index.resolve_java(spec, star=imported == "*")
         return self.index.resolve_js(path, spec)
 
     def _imports(self, path: str, fa: FileAnalysis) -> None:
-        eco = "python" if fa.language == "python" else "npm"
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
+        eco = ECOSYSTEM.get(fa.language, "npm")
+        method = _method_for(fa.language)
         binds: dict[str, tuple] = {}
         src = file_key(path)
         for imp in fa.imports:
             label = ("." * imp.level) + imp.spec
             eid = self.ev.add(path, imp.line, imp.end_line, EvidenceCategory.IMPORT, method, f"import {label}")
             self.stats["imports_total"] += 1
-            # A python "from x import a, b" may resolve per-name to submodules.
             per_name = fa.language == "python" and imp.kind == "from"
             targets: list[tuple[Resolution, Any]] = []
             if per_name:
                 for b in imp.bindings:
                     targets.append((self._resolve_import(path, fa, imp.spec, imp.level, b.imported), b))
             else:
-                res = self._resolve_import(path, fa, imp.spec, imp.level, None)
+                star = any(b.imported == "*" for b in imp.bindings) and fa.language == "java"
+                res = self._resolve_import(path, fa, imp.spec, imp.level, "*" if star else None)
                 targets = [(res, b) for b in imp.bindings] or [(res, None)]
             for res, b in targets:
                 self.stats[f"imports_{res.status}"] += 1
                 if res.status == "resolved" and res.target_path:
-                    self.g.edge(src, file_key(res.target_path), "imports", "resolved", eid, spec=label)
-                    if b is not None:
+                    for tgt in (res.candidates or [res.target_path])[:20] if fa.language in ("go", "java") else [res.target_path]:
+                        self.g.edge(src, file_key(tgt), "imports", "resolved", eid, spec=label)
+                    if b is None:
+                        continue
+                    if b.local == "*":
+                        self.stars[path].extend((res.candidates or [res.target_path]) if fa.language == "java" else [res.target_path])
+                    elif fa.language == "go":
+                        binds[b.local] = ("gopkg", res.package)
+                    else:
                         target_is_module = per_name and res.target_path and _module_matches_name(res.target_path, b.imported)
                         binds[b.local] = ("file", res.target_path, None if target_is_module else b.imported)
+                    if fa.language == "python" and imp.kind == "import":
+                        # `import a.b` binds `a` and references look like `a.b.x`; `import a.b as c` binds c -> a.b
+                        spec_parts = imp.spec.split(".")
+                        prefix = spec_parts[1:] if b.local == spec_parts[0] else []
+                        binds[b.local] = ("file", res.target_path, None, prefix)
                 elif res.status == "ambiguous":
                     for c in (res.candidates or [])[:5]:
                         self.g.edge(src, file_key(c), "imports", "ambiguous", eid, spec=label)
@@ -230,7 +347,7 @@ class SnapshotAnalyzer:
                     k = self.g.node(pkg_key(eco, res.package), "package", res.package, ecosystem=eco)
                     self.g.edge(src, k, "imports", "external", eid, spec=label)
                     self.imported_packages[(eco, res.package)].append(eid or "")
-                    if b is not None:
+                    if b is not None and b.local != "*":
                         binds[b.local] = ("pkg", eco, res.package)
                 elif res.status == "stdlib":
                     if b is not None:
@@ -238,13 +355,92 @@ class SnapshotAnalyzer:
                 else:
                     k = self.g.node(f"unresolved:import:{label}", "unresolved", label)
                     self.g.edge(src, k, "imports", "unresolved", eid, spec=label)
-                if res.status == "resolved" and b is not None and fa.language == "python" and imp.kind == "import":
-                    # `import a.b` binds `a` and references look like `a.b.x`; `import a.b as c` binds c -> a.b
-                    spec_parts = imp.spec.split(".")
-                    prefix = spec_parts[1:] if b.local == spec_parts[0] else []
-                    binds[b.local] = ("file", res.target_path, None, prefix)
         self.bindings[path] = binds
 
+    # ------------------------------------------------------------------ hierarchy
+    def _inheritance(self, path: str, fa: FileAnalysis) -> None:
+        method = _method_for(fa.language)
+        for s in fa.symbols:
+            if s.kind not in CLASS_KINDS:
+                continue
+            ckey = sym_key(path, s.qualified_name)
+            for base in s.bases:
+                t = self._resolve_name(path, base.split("."), "<module>", allow_local_types=False)
+                if t is None:
+                    self.unresolved_bases[ckey] += 1
+                    continue
+                if t.resolution == "unresolved":
+                    self.g.node(t.key, "unresolved", base)
+                if t.resolution == "resolved" and self.sym_kind.get(t.key) in CLASS_KINDS:
+                    self.bases[ckey].append(t.key)
+                    self.subclasses[t.key].append(ckey)
+                else:
+                    self.unresolved_bases[ckey] += 1
+                eid = self.ev.add(path, s.start_line, s.start_line, EvidenceCategory.SYMBOL_DEFINITION, method, f"class {s.qualified_name} bases")
+                self.g.edge(ckey, t.key, "inherits", t.resolution, eid, base=base, via=t.via)
+
+    def _ancestors(self, cls_key: str) -> list[str]:
+        """Breadth-first base classes (approximate MRO; cycles guarded)."""
+        out: list[str] = []
+        queue = list(self.bases.get(cls_key, []))
+        while queue and len(out) < 50:
+            k = queue.pop(0)
+            if k in out or k == cls_key:
+                continue
+            out.append(k)
+            queue.extend(self.bases.get(k, []))
+        return out
+
+    def _descendants(self, cls_key: str) -> list[str]:
+        out: list[str] = []
+        stack = list(self.subclasses.get(cls_key, []))
+        while stack and len(out) < 100:
+            k = stack.pop()
+            if k in out or k == cls_key:
+                continue
+            out.append(k)
+            stack.extend(self.subclasses.get(k, []))
+        return out
+
+    @staticmethod
+    def _member_key(cls_key: str, name: str) -> str:
+        return f"{cls_key}.{name}"
+
+    def _lookup_member(self, cls_key: str, name: str, include_self: bool) -> str | None:
+        chain = ([cls_key] if include_self else []) + self._ancestors(cls_key)
+        for k in chain:
+            mk = self._member_key(k, name)
+            if mk in self.g.nodes:
+                return mk
+        return None
+
+    def _dispatch(self, cls_key: str, name: str, include_self: bool, dynamic: bool) -> Target:
+        """Method lookup through the class hierarchy. `dynamic` = receiver is an instance (self/this/typed local)."""
+        found = self._lookup_member(cls_key, name, include_self)
+        if found is None:
+            reason = (
+                "possibly_inherited_from_unresolved_base"
+                if self.unresolved_bases.get(cls_key) or any(self.unresolved_bases.get(a) for a in self._ancestors(cls_key))
+                else "member_not_found"
+            )
+            return Target(f"unresolved:member:{name}", "unresolved", reason)
+        via = "class_member" if found.startswith(cls_key + ".") and include_self else "inheritance"
+        if dynamic:
+            overrides = [self._member_key(d, name) for d in self._descendants(cls_key)]
+            overrides = [o for o in overrides if o in self.g.nodes and o != found]
+            if overrides:
+                return Target(found, "ambiguous", "dynamic_dispatch", overrides[:MAX_DISPATCH_CANDIDATES])
+        return Target(found, "resolved", via)
+
+    def _enclosing_class(self, path: str, caller: str) -> str | None:
+        parts = caller.split(".")
+        for i in range(len(parts) - 1, 0, -1):
+            k = sym_key(path, ".".join(parts[:i]))
+            if self.sym_kind.get(k) in CLASS_KINDS:
+                return k
+        return None
+
+    # ------------------------------------------------------------------ name resolution
     def _caller_key(self, path: str, caller: str) -> str:
         if caller != "<module>":
             k = sym_key(path, caller)
@@ -252,29 +448,36 @@ class SnapshotAnalyzer:
                 return k
         return file_key(path)
 
-    def _resolve_name(self, path: str, parts: list[str], caller: str) -> tuple[str, str] | None:
-        """Return (target_key, resolution) for a dotted reference, or None if it is a dynamic receiver."""
-        tops = self.top_symbols.get(path, {})
+    def _resolve_name(self, path: str, parts: list[str], caller: str, allow_local_types: bool = True) -> Target | None:
+        """Resolve a dotted reference. Returns None for dynamic receivers we do not attempt to resolve."""
+        fa = self.analyses.get(path)
+        tops = self._scope_tops(path)
         binds = self.bindings.get(path, {})
         head = parts[0]
-        if head in ("self", "this", "cls") and len(parts) == 2:
-            cls = caller.rsplit(".", 1)[0] if "." in caller else None
-            if cls:
-                k = sym_key(path, f"{cls}.{parts[1]}")
-                if k in self.g.nodes:
-                    return k, "resolved"
-            return f"unresolved:member:{parts[1]}", "unresolved"
-        if len(parts) == 1:
-            if head in tops:
-                return sym_key(path, tops[head].qualified_name), "resolved"
-            b = binds.get(head)
-            if b is None:
-                return f"unresolved:name:{head}", "unresolved"
-            return self._resolve_binding(b, [])
-        if head in tops and len(parts) == 2 and tops[head].kind == "class":
-            k = sym_key(path, f"{head}.{parts[1]}")
-            if k in self.g.nodes:
-                return k, "resolved"
+        if head in ("self", "this", "cls", "super"):
+            cls_key = self._enclosing_class(path, caller)
+            if len(parts) == 2 and cls_key:
+                return self._dispatch(cls_key, parts[1], include_self=head != "super", dynamic=head in ("self", "this"))
+            if len(parts) == 2:
+                return Target(f"unresolved:member:{parts[1]}", "unresolved", "no_enclosing_class")
+            return None
+        if allow_local_types and fa is not None and len(parts) == 2:
+            ctor = fa.local_types.get(caller, {}).get(head) or fa.instantiations.get(head)
+            if ctor:
+                cls = self._resolve_name(path, ctor.split("."), caller, allow_local_types=False)
+                if cls is not None and self.sym_kind.get(cls.key) in CLASS_KINDS:
+                    t = self._dispatch(cls.key, parts[1], include_self=True, dynamic=True)
+                    if t.resolution == "resolved":
+                        t.via = "declared_or_constructed_type"
+                    return t
+        if head in tops:
+            tpath, sym = tops[head]
+            key = sym_key(tpath, sym.qualified_name)
+            if len(parts) == 1:
+                return Target(key, "resolved", "same_file" if tpath == path else "same_package")
+            if sym.kind in CLASS_KINDS and len(parts) == 2:
+                return self._dispatch(key, parts[1], include_self=True, dynamic=False)
+            return None
         b = binds.get(head)
         if b is not None:
             rest = parts[1:]
@@ -283,65 +486,108 @@ class SnapshotAnalyzer:
                 if rest[: len(prefix)] != prefix:
                     return None
                 rest = rest[len(prefix) :]
-            return self._resolve_binding(b, rest)
+            return self._resolve_binding(b, rest, 0)
+        star = self._star_lookup(path, head, parts[1:])
+        if star is not None:
+            return star
+        if len(parts) == 1:
+            return Target(f"unresolved:name:{head}", "unresolved", "name_not_found")
         return None
 
-    def _resolve_binding(self, b: tuple, rest: list[str]) -> tuple[str, str] | None:
+    def _star_lookup(self, path: str, name: str, rest: list[str]) -> Target | None:
+        for tgt in self.stars.get(path, []):
+            t = self._resolve_binding(("file", tgt, None), [name, *rest], 1)
+            if t is not None and t.resolution != "unresolved":
+                t.via = "wildcard_import"
+                return t
+        return None
+
+    def _resolve_binding(self, b: tuple, rest: list[str], depth: int) -> Target | None:
         if b[0] == "pkg":
-            return pkg_key(b[1], b[2]), "external"
+            return Target(pkg_key(b[1], b[2]), "external", "import")
         if b[0] == "stdlib":
             return None
+        if b[0] == "gopkg":
+            files = self.index.go_package_files(b[1]) if b[1] is not None else []
+            if not files:
+                return None
+            if not rest:
+                return Target(file_key(files[0]), "resolved", "package")
+            tops = self._scope_tops(files[0])
+            if rest[0] in tops:
+                tpath, sym = tops[rest[0]]
+                key = sym_key(tpath, sym.qualified_name)
+                if len(rest) >= 2 and sym.kind in CLASS_KINDS:
+                    return self._dispatch(key, rest[1], include_self=True, dynamic=False)
+                return Target(key, "resolved", "package_member")
+            return Target(f"unresolved:member:{'.'.join(rest)}", "unresolved", "member_not_found")
         target_path, imported = b[1], b[2]
-        names = ([imported] if imported and imported not in ("default", "*") else []) + rest
-        tops = self.top_symbols.get(target_path, {})
+        tfa = self.analyses.get(target_path)
+        if imported == "default":
+            default = tfa.default_export if tfa else None
+            names = ([default] if default else []) + rest
+        else:
+            names = ([imported] if imported and imported != "*" else []) + rest
+        via = "import" if depth == 0 else "re-export"
+        tops = self._scope_tops(target_path)
         if names and names[0] in tops:
-            sym = tops[names[0]]
-            if len(names) >= 2 and sym.kind == "class":
-                k = sym_key(target_path, f"{sym.qualified_name}.{names[1]}")
-                if k in self.g.nodes:
-                    return k, "resolved"
-            return sym_key(target_path, sym.qualified_name), "resolved"
+            tpath, sym = tops[names[0]]
+            key = sym_key(tpath, sym.qualified_name)
+            if len(names) >= 2 and sym.kind in CLASS_KINDS:
+                t = self._dispatch(key, names[1], include_self=True, dynamic=False)
+                if depth and t.resolution == "resolved":
+                    t.via = "re-export"
+                return t
+            return Target(key, "resolved", via)
         if not names:
-            return file_key(target_path), "resolved"
-        return f"unresolved:member:{'.'.join(names)}", "unresolved"
+            return Target(file_key(target_path), "resolved", "module")
+        if depth < 4:
+            nb = self.bindings.get(target_path, {}).get(names[0])
+            t2: Target | None
+            if nb is not None:
+                t2 = self._resolve_binding(nb, names[1:], depth + 1)
+                if t2 is not None and t2.resolution != "unresolved":
+                    if t2.resolution == "resolved":
+                        t2.via = "re-export"
+                    return t2
+            for star in self.stars.get(target_path, []):
+                t2 = self._resolve_binding(("file", star, None), names, depth + 1)
+                if t2 is not None and t2.resolution != "unresolved":
+                    if t2.resolution == "resolved":
+                        t2.via = "re-export"
+                    return t2
+        if tfa is not None and tfa.language == "java":  # static member import: a.b.C.member
+            for _name, (tpath, sym) in tops.items():
+                mk = self._member_key(sym_key(tpath, sym.qualified_name), names[0])
+                if sym.kind in CLASS_KINDS and mk in self.g.nodes:
+                    return Target(mk, "resolved", "static_import")
+        return Target(f"unresolved:member:{'.'.join(names)}", "unresolved", "member_not_found")
 
+    # ------------------------------------------------------------------ calls & routes
     def _calls(self, path: str, fa: FileAnalysis) -> None:
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
+        method = _method_for(fa.language)
         unresolved_budget = MAX_UNRESOLVED_CALL_EDGES_PER_FILE
         for call in fa.calls:
-            parts = call.callee.split(".")
-            target = self._resolve_name(path, parts, call.caller)
-            if target is None:
+            t = self._resolve_name(path, call.callee.split("."), call.caller)
+            if t is None:
                 self.stats["calls_dynamic_receiver"] += 1
                 continue
-            tkey, resolution = target
-            self.stats[f"calls_{resolution}"] += 1
-            if resolution == "unresolved":
+            self.stats[f"calls_{t.resolution}"] += 1
+            self.stats[f"calls_via_{t.via}"] += 1
+            if t.resolution == "unresolved":
                 if unresolved_budget <= 0:
                     self.stats["calls_unresolved_not_stored"] += 1
                     continue
                 unresolved_budget -= 1
-                self.g.node(tkey, "unresolved", tkey.split(":", 2)[-1])
+                self.g.node(t.key, "unresolved", t.key.split(":", 2)[-1])
             eid = self.ev.add(path, call.line, call.end_line, EvidenceCategory.CALL, method, f"call {call.callee}")
-            self.g.edge(self._caller_key(path, call.caller), tkey, "calls", resolution, eid, callee=call.callee)
-
-    def _inheritance(self, path: str, fa: FileAnalysis) -> None:
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
-        for s in fa.symbols:
-            if s.kind != "class":
-                continue
-            for base in s.bases:
-                target = self._resolve_name(path, base.split("."), "<module>")
-                if target is None:
-                    continue
-                tkey, resolution = target
-                if resolution == "unresolved":
-                    self.g.node(tkey, "unresolved", base)
-                eid = self.ev.add(path, s.start_line, s.start_line, EvidenceCategory.SYMBOL_DEFINITION, method, f"class {s.qualified_name} bases")
-                self.g.edge(sym_key(path, s.qualified_name), tkey, "inherits", resolution, eid, base=base)
+            src = self._caller_key(path, call.caller)
+            self.g.edge(src, t.key, "calls", t.resolution, eid, callee=call.callee, via=t.via, line=call.line)
+            for cand in t.candidates:
+                self.g.edge(src, cand, "calls", "ambiguous", eid, callee=call.callee, via="possible_override", line=call.line)
 
     def _routes(self, path: str, fa: FileAnalysis, next_declared: bool) -> None:
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
+        method = _method_for(fa.language)
         for r in fa.routes:
             framework, confidence = r.framework, r.confidence
             if framework == "unknown" and r.receiver:
@@ -357,21 +603,35 @@ class SnapshotAnalyzer:
                     self.stats["nextjs_candidates_without_next_dependency"] += 1
                     continue
                 confidence = "confirmed"
+            if framework == "Spring":
+                if any(i.spec.startswith("org.springframework") for i in fa.imports):
+                    confidence = "confirmed"
+                else:
+                    self.stats["spring_candidates_without_spring_import"] += 1
+                    continue
             limitations = [] if confidence == "confirmed" else ["framework attribution not confirmed by static analysis"]
             eid = self.ev.add(path, r.line, r.end_line, EvidenceCategory.ROUTE, method, f"{r.method} {r.path}", limitations)
             rkey = self.g.node(f"route:{r.method} {r.path}@{path}:{r.line}", "route", f"{r.method} {r.path}", path, r.line, r.end_line, framework=framework)
             self.g.edge(file_key(path), rkey, "declares_route", "resolved", eid)
             if r.handler:
-                target = self._resolve_name(path, r.handler.split("."), "<module>")
-                if target:
-                    if target[1] == "unresolved":
-                        self.g.node(target[0], "unresolved", r.handler)
-                    self.g.edge(rkey, target[0], "handled_by", target[1], eid)
+                t = self._resolve_name(path, r.handler.split("."), "<module>")
+                if t is not None:
+                    if t.resolution == "unresolved":
+                        self.g.node(t.key, "unresolved", r.handler)
+                    self.g.edge(rkey, t.key, "handled_by", t.resolution, eid, via=t.via)
             self.findings.append(
                 {
                     "kind": "route",
                     "name": f"{r.method} {r.path}",
-                    "detail": {"framework": framework, "path": path, "line": r.line, "handler": r.handler, "method": r.method, "route": r.path},
+                    "detail": {
+                        "framework": framework,
+                        "path": path,
+                        "line": r.line,
+                        "handler": r.handler,
+                        "method": r.method,
+                        "route": r.path,
+                        "route_key": rkey,
+                    },
                     "evidence_id": eid,
                     "confidence": confidence,
                 }
@@ -379,14 +639,19 @@ class SnapshotAnalyzer:
             self.stats["routes"] += 1
 
     def _entry_points(self, path: str, fa: FileAnalysis) -> None:
-        method = ExtractionMethod.PYTHON_AST if fa.language == "python" else ExtractionMethod.TREE_SITTER
+        method = _method_for(fa.language)
         for e in fa.entry_points:
             eid = self.ev.add(path, e.line, e.end_line, EvidenceCategory.ENTRY_POINT, method, f"{e.kind} {e.name}")
+            node_key = file_key(path)
+            if e.kind in ("go_main",):
+                node_key = sym_key(path, "main")
+            elif e.kind == "java_main":
+                node_key = sym_key(path, e.name)
             self.findings.append(
                 {
                     "kind": "entry_point",
                     "name": f"{e.kind}: {path}" if e.kind == "python_main_guard" else f"{e.kind}: {e.name}",
-                    "detail": {"path": path, "line": e.line, "type": e.kind},
+                    "detail": {"path": path, "line": e.line, "end_line": e.end_line, "type": e.kind, "node_key": node_key},
                     "evidence_id": eid,
                     "confidence": "confirmed",
                 }
@@ -408,12 +673,22 @@ class SnapshotAnalyzer:
     def _dependencies(self, manifests: list[ManifestInfo]) -> None:
         imported_py: dict[str, list[str]] = defaultdict(list)
         imported_npm: dict[str, list[str]] = defaultdict(list)
+        imported_prefix: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)  # go/maven
         for (eco, pkg), eids in self.imported_packages.items():
             if eco == "python":
                 imported_py[normalize_python_name(PYTHON_IMPORT_TO_DIST.get(pkg, pkg))] += eids
                 imported_py[normalize_python_name(pkg)] += eids
+            elif eco in ("go", "maven"):
+                imported_prefix[eco].append((pkg, eids))
             else:
                 imported_npm[pkg] += eids
+
+        def prefix_hits(eco: str, name: str) -> list[str]:
+            if eco == "go":
+                return [e for p, eids in imported_prefix["go"] if p == name or p.startswith(name + "/") or name.startswith(p + "/") for e in eids]
+            group = name.split(":")[0]
+            return [e for p, eids in imported_prefix["maven"] if p == group or p.startswith(group + ".") for e in eids]
+
         declared_keys: set[tuple[str, str]] = set()
         for m in manifests:
             for e in m.errors:
@@ -426,7 +701,12 @@ class SnapshotAnalyzer:
                 seen.add((d.ecosystem, d.name.lower(), d.scope))
                 eid = self.ev.add(m.path, d.line, d.line, EvidenceCategory.DEPENDENCY_DECLARATION, ExtractionMethod.MANIFEST_PARSER, f"{d.ecosystem}:{d.name}")
                 norm = normalize_python_name(d.name) if d.ecosystem == "python" else d.name
-                hits = imported_py.get(norm, []) if d.ecosystem == "python" else imported_npm.get(norm, [])
+                if d.ecosystem == "python":
+                    hits = imported_py.get(norm, [])
+                elif d.ecosystem in ("go", "maven"):
+                    hits = prefix_hits(d.ecosystem, d.name)
+                else:
+                    hits = imported_npm.get(norm, [])
                 declared_keys.add((d.ecosystem, norm))
                 k = self.g.node(pkg_key(d.ecosystem, d.name if d.ecosystem == "npm" else norm), "package", d.name, ecosystem=d.ecosystem)
                 self.g.edge(file_key(m.path), k, "declares_dependency", "resolved", eid, scope=d.scope)
@@ -483,7 +763,12 @@ class SnapshotAnalyzer:
                     }
                 )
         # undeclared imports
+        declared_go = [n for e, n in declared_keys if e == "go"]
         for (eco, pkg), eids in self.imported_packages.items():
+            if eco == "maven":
+                continue  # Java package names do not map 1:1 to Maven coordinates; make no undeclared claims
+            if eco == "go" and any(pkg == n or pkg.startswith(n + "/") or n.startswith(pkg + "/") for n in declared_go):
+                continue
             norm = normalize_python_name(PYTHON_IMPORT_TO_DIST.get(pkg, pkg)) if eco == "python" else pkg
             if (eco, norm) in declared_keys or (eco == "python" and (eco, normalize_python_name(pkg)) in declared_keys):
                 continue
@@ -515,6 +800,18 @@ class SnapshotAnalyzer:
             for d in self.dependencies
             if d["scope"] != "undeclared"
         }
+        for (eco, prefix), (fw, role) in FRAMEWORK_PREFIXES.items():
+            sites = [e for (e2, p), eids in self.imported_packages.items() if e2 == eco and (p == prefix or p.startswith(prefix + ".")) for e in eids]
+            if sites:
+                self.findings.append(
+                    {
+                        "kind": "framework",
+                        "name": fw,
+                        "detail": {"role": role, "ecosystem": eco, "package": prefix, "import_sites": len(sites), "declared": None},
+                        "evidence_id": sites[0] or None,
+                        "confidence": "observed",
+                    }
+                )
         for (eco, pkg), (fw, role) in FRAMEWORKS.items():
             imp = self.imported_packages.get((eco, pkg))
             dkey = (eco, pkg)
@@ -605,8 +902,10 @@ class SnapshotAnalyzer:
     def _persist(self, contents: dict[str, str]) -> dict[str, Any]:
         sid = self.snapshot.id
         s = self.session
-        for model in (Symbol, Evidence, GraphNode, GraphEdge, Dependency, Finding):
+        for model in (Symbol, Evidence, GraphNode, GraphEdge, Dependency, Finding, FileAnalysisCache):
             s.execute(delete(model).where(model.snapshot_id == sid))
+        if self.ir_rows:
+            s.execute(insert(FileAnalysisCache), self.ir_rows)
         if self.ev.records:
             s.execute(insert(Evidence), list(self.ev.records.values()))
         if self.symbol_rows:

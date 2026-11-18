@@ -12,8 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-CONTRACT_VERSION = "1.0"
-ANALYZER_VERSION = "0.1.0"
+CONTRACT_VERSION = "1.1"  # 1.1: IDs also hash the analyzer version, so two analyses of one commit never collide
+ANALYZER_VERSION = "0.2.0"
 
 
 class EvidenceCategory(StrEnum):
@@ -84,6 +84,8 @@ class EvidenceRecord(BaseModel):
     excerpt_sha256: str | None = None
 
 
-def evidence_id(commit_sha: str, path: str, start: int, end: int, category: str, method: str, subject: str | None) -> str:
-    key = "\x1f".join([CONTRACT_VERSION, commit_sha, path, str(start), str(end), category, method, subject or ""])
+def evidence_id(
+    commit_sha: str, path: str, start: int, end: int, category: str, method: str, subject: str | None, analyzer_version: str = ANALYZER_VERSION
+) -> str:
+    key = "\x1f".join([CONTRACT_VERSION, analyzer_version, commit_sha, path, str(start), str(end), category, method, subject or ""])
     return "ev_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]

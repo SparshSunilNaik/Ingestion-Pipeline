@@ -82,6 +82,11 @@ class _Visitor(ast.NodeVisitor):
         )
         for dec in node.decorator_list:
             self._maybe_route(dec, qual)
+        # Declared parameter types (e.g. `account: Account`) type the parameter for method resolution.
+        for a in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
+            ann = _dotted(a.annotation) if a.annotation is not None else None
+            if ann and ann.rsplit(".", 1)[-1][:1].isupper() and a.arg not in ("self", "cls"):
+                self.r.local_types.setdefault(qual, {})[a.arg] = ann
         for dec in node.decorator_list:
             self.visit(dec)  # decorators evaluate in the enclosing scope
         for default in [*node.args.defaults, *node.args.kw_defaults]:
@@ -148,6 +153,14 @@ class _Visitor(ast.NodeVisitor):
     # -- calls / assignments -----------------------------------------------
     def visit_Call(self, node: ast.Call) -> None:
         callee = _dotted(node.func)
+        if (
+            callee is None
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Call)
+            and isinstance(node.func.value.func, ast.Name)
+            and node.func.value.func.id == "super"
+        ):
+            callee = f"super.{node.func.attr}"
         if callee is None:
             self.r.skipped_dynamic_calls += 1
         elif callee in _BUILTINS:
@@ -158,6 +171,14 @@ class _Visitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
+        if self.scope and isinstance(node.value, ast.Call):
+            ctor = _dotted(node.value.func)
+            caller = self._current_callable()
+            # Heuristic: CapitalisedName(...) is treated as a constructor call.
+            if ctor and caller != "<module>" and ctor.rsplit(".", 1)[-1][:1].isupper():
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        self.r.local_types.setdefault(caller, {})[t.id] = ctor
         if not self.scope and isinstance(node.value, ast.Call):
             ctor = _dotted(node.value.func)
             if ctor:
