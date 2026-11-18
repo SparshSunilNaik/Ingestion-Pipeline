@@ -1,0 +1,77 @@
+[project]
+name = "ingestion-pipeline-backend"
+version = "0.1.0"
+description = "Evidence-grounded repository intelligence backend"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.164.0",
+    "httpx>=0.28.1",
+    "networkx>=3.7",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.3",
+    "sqlalchemy>=2.0",
+    "tree-sitter>=0.26.1",
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-typescript>=0.23.2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pip-audit>=2.10.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+    "types-networkx>=3.6.1.20261117",
+]
+
+[tool.uv]
+# Windows Smart App Control can block unsigned compiled extensions. SQLAlchemy has
+# complete pure-Python fallbacks (as does mypy), so build them without compiled extensions.
+no-binary-package = ["sqlalchemy", "mypy"]
+
+[tool.uv.extra-build-variables]
+sqlalchemy = { DISABLE_SQLALCHEMY_CEXT = "1" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Fixed basetemp avoids pytest's numbered-dir symlinks, which fail on some Windows setups.
+addopts = "-q --basetemp=.pytest-tmp -p no:cacheprovider"
+markers = [
+    "live_github: requires network access to github.com",
+    "live_opencode: requires a running, authenticated OpenCode runtime (may incur model cost)",
+]
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+extend-exclude = ["alembic/versions", ".pytest-tmp", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "S101",   # assert is used for internal invariants and tests
+    "S603",   # subprocess calls use fixed argv lists without a shell
+    "S607",   # git/taskkill are resolved from PATH by design
+    "S608",   # SQL is parameterised; f-strings are not used for values
+    "B008",   # FastAPI Depends() in defaults
+    "RUF001", "RUF002", "RUF003",  # intentional unicode punctuation in text
+    "SIM108",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+known-third-party = ["alembic"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B", "E501"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["app"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = false
+disallow_untyped_defs = false

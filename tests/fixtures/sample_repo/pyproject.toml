@@ -1,0 +1,12 @@
+[project]
+name = "sample-inventory"
+version = "0.1.0"
+description = "Demo inventory service used as a test fixture"
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.110", "pydantic>=2", "PyYAML>=6", "requests>=2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+inventory = "app.main:run"
