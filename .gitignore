@@ -32,7 +32,7 @@ Thumbs.db
 .idea/
 
 # Playwright
-frontend/e2e/.data/
+frontend/e2e/.data*/
 frontend/test-results/
 frontend/playwright-report/
 frontend/.next-e2e/

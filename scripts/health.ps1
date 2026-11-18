@@ -7,8 +7,13 @@ param([string]$ApiBase = "http://127.0.0.1:8000", [string]$FrontendUrl = "http:/
 $ErrorActionPreference = "Continue"
 $ok = $true
 
+# Authenticated endpoints use the local API token (never printed).
+$tokenFile = Join-Path $BackendDir "data\api-token"
+$headers = @{}
+if (Test-Path $tokenFile) { $headers["Authorization"] = "Bearer " + (Get-Content $tokenFile -Raw).Trim() }
+
 function Get-Json([string]$Url) {
-    try { return Invoke-RestMethod -Uri $Url -TimeoutSec 15 } catch { return $null }
+    try { return Invoke-RestMethod -Uri $Url -Headers $headers -TimeoutSec 20 } catch { return $null }
 }
 
 $health = Get-Json "$ApiBase/api/health"
@@ -18,10 +23,11 @@ else { Write-Host "[fail] backend not reachable at $ApiBase" -ForegroundColor Re
 $ready = Get-Json "$ApiBase/api/health/ready"
 if ($ready) {
     $color = if ($ready.status -eq "ok") { "Green" } else { "Yellow" }
-    Write-Host "[$($ready.status)] database=$($ready.database) worker_running=$($ready.worker_running) git=$($ready.git)" -ForegroundColor $color
+    Write-Host "[$($ready.status)] database=$($ready.database) worker_running=$($ready.worker_running) worker_mode=$($ready.agent.worker_mode) auth=$($ready.agent.auth_mode) git=$($ready.git)" -ForegroundColor $color
 }
 
 $agent = Get-Json "$ApiBase/api/agent/status"
+if (-not $agent -and -not (Test-Path $tokenFile)) { Write-Host "[warn] no API token file yet; start the backend once" -ForegroundColor Yellow }
 if ($agent) {
     $color = if ($agent.agent_ready) { "Green" } else { "Yellow" }
     Write-Host "[agent] mode=$($agent.mode) available=$($agent.available) version=$($agent.version) model=$($agent.selected_model) ready=$($agent.agent_ready)" -ForegroundColor $color

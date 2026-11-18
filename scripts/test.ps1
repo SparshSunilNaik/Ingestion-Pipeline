@@ -5,8 +5,12 @@
   Also run opt-in live tests (real GitHub clone and a real OpenCode model call).
 .PARAMETER BackendOnly
   Skip frontend checks.
+.PARAMETER E2E
+  Also run the Playwright end-to-end suite (isolated, seeded test backend; uses Microsoft Edge locally).
+.PARAMETER Bench
+  Also run the deterministic repository-intelligence benchmark.
 #>
-param([switch]$Live, [switch]$BackendOnly)
+param([switch]$Live, [switch]$BackendOnly, [switch]$E2E, [switch]$Bench)
 . (Join-Path $PSScriptRoot "_common.ps1")
 $uv = Resolve-Uv
 if (-not $uv) { throw "uv not found; run scripts/setup.ps1 first" }
@@ -26,6 +30,7 @@ try {
     Invoke-Check "mypy" { & $uv run python -m mypy }
     if ($Live) { $env:IP_LIVE_TESTS = "1" } else { Remove-Item Env:IP_LIVE_TESTS -ErrorAction SilentlyContinue }
     Invoke-Check "pytest" { & $uv run python -m pytest tests -rs }
+    if ($Bench) { Invoke-Check "benchmark" { & $uv run python -m app.bench } }
 } finally { Pop-Location }
 
 if (-not $BackendOnly) {
@@ -34,6 +39,11 @@ if (-not $BackendOnly) {
         Invoke-Check "eslint" { npm run lint }
         Invoke-Check "tsc" { npx next typegen; npx tsc --noEmit }
         Invoke-Check "next build" { npm run build }
+        if ($E2E) {
+            $env:PW_CHANNEL = "msedge"
+            $env:IP_UV_CMD = "$uv"
+            Invoke-Check "playwright e2e" { npx playwright test }
+        }
     } finally { Pop-Location }
 }
 
