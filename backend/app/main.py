@@ -60,7 +60,7 @@ class WorkerProcess:
             env["IP_OPENCODE_PASSWORD"] = conn[1] or ""
         elif not self.runtime.enabled or self.settings.opencode.mode == "managed":
             env["IP_OPENCODE_MODE"] = "disabled"
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         self.proc, self.job = popen_limited(
             [sys.executable, "-m", "app.worker_main"], Limits(kill_on_close=True), cwd=str(BACKEND_ROOT), env=env, creationflags=flags
         )

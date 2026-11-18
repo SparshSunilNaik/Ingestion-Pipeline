@@ -32,8 +32,8 @@ IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
     from ctypes import wintypes
 
-    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    _ntdll = ctypes.WinDLL("ntdll")
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
+    _ntdll = ctypes.WinDLL("ntdll")  # type: ignore[attr-defined,unused-ignore]
 
     JobObjectExtendedLimitInformation = 9
     JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
@@ -101,7 +101,7 @@ class JobObject:
             return
         h = _kernel32.CreateJobObjectW(None, None)
         if not h:
-            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")  # type: ignore[attr-defined,unused-ignore]
         info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         flags = 0
         if limits.kill_on_close:
@@ -114,14 +114,14 @@ class JobObject:
             info.BasicLimitInformation.ActiveProcessLimit = limits.max_processes
         info.BasicLimitInformation.LimitFlags = flags | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
         if not _kernel32.SetInformationJobObject(h, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)):
-            err = ctypes.get_last_error()
+            err = ctypes.get_last_error()  # type: ignore[attr-defined,unused-ignore]
             _kernel32.CloseHandle(h)
             raise OSError(err, "SetInformationJobObject failed")
         self.handle = h
 
     def assign(self, process_handle: int) -> None:
         if IS_WINDOWS and self.handle and not _kernel32.AssignProcessToJobObject(self.handle, process_handle):
-            raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject failed")
+            raise OSError(ctypes.get_last_error(), "AssignProcessToJobObject failed")  # type: ignore[attr-defined,unused-ignore]
 
     def query_limits(self) -> dict[str, int]:
         if not (IS_WINDOWS and self.handle):
