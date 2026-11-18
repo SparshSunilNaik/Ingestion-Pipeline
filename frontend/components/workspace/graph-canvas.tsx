@@ -55,7 +55,7 @@ function IpNode({ data }: NodeProps<Node<NodeData>>) {
   return (
     <div
       className={cn(
-        "flex h-[38px] w-[210px] items-center gap-2 overflow-hidden rounded-md border bg-panel pr-2 text-left shadow-sm transition-opacity",
+        "flex h-[38px] w-[184px] items-center gap-2 overflow-hidden rounded-md border bg-panel pr-2 text-left shadow-sm transition-opacity",
         data.selected ? "border-accent" : n.focus ? "border-accent/70" : "border-line-strong",
         data.dim && "opacity-25",
       )}
@@ -78,16 +78,16 @@ function IpNode({ data }: NodeProps<Node<NodeData>>) {
 
 const nodeTypes = { ip: IpNode };
 
-function layout(nodes: ViewNode[], edges: ViewEdge[], direction: "LR" | "TB") {
+function layout(nodes: ViewNode[], edges: ViewEdge[], direction: "LR" | "TB" | "RL") {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: direction, nodesep: 14, ranksep: 64, marginx: 20, marginy: 20 });
+  g.setGraph({ rankdir: direction, nodesep: 12, ranksep: 48, marginx: 16, marginy: 16 });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) g.setNode(n.key, { width: 210, height: 38 });
+  for (const n of nodes) g.setNode(n.key, { width: 184, height: 38 });
   for (const e of edges) if (e.source !== e.target) g.setEdge(e.source, e.target);
   dagre.layout(g);
   return new Map(nodes.map((n) => {
     const p = g.node(n.key);
-    return [n.key, { x: (p?.x ?? 0) - 105, y: (p?.y ?? 0) - 19 }];
+    return [n.key, { x: (p?.x ?? 0) - 92, y: (p?.y ?? 0) - 19 }];
   }));
 }
 
@@ -96,12 +96,14 @@ export interface GraphCanvasProps {
   edges: ViewEdge[];
   selected: string | null;
   onSelect: (key: string | null) => void;
-  direction?: "LR" | "TB";
+  /** Double-click: open the node (drill into a directory, open a file or symbol). */
+  onOpen?: (node: ViewNode) => void;
+  direction?: "LR" | "TB" | "RL";
   showCounts?: boolean;
   fitKey?: string;
 }
 
-function Canvas({ nodes, edges, selected, onSelect, direction = "LR", showCounts, fitKey }: GraphCanvasProps) {
+function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", showCounts, fitKey }: GraphCanvasProps) {
   const rf = useReactFlow();
   const positions = useMemo(() => layout(nodes, edges, direction), [nodes, edges, direction]);
   const neighbours = useMemo(() => {
@@ -146,7 +148,9 @@ function Canvas({ nodes, edges, selected, onSelect, direction = "LR", showCounts
   const initialized = useNodesInitialized();
   useEffect(() => {
     if (!initialized) return;
-    void rf.fitView({ padding: 0.12, maxZoom: 1.2 });
+    // Wait a frame so freshly laid-out nodes are measured before fitting.
+    const t = setTimeout(() => void rf.fitView({ padding: 0.15, maxZoom: 1.1, duration: 0 }), 60);
+    return () => clearTimeout(t);
   }, [initialized, fitKey, nodes.length, rf]);
 
   return (
@@ -155,6 +159,8 @@ function Canvas({ nodes, edges, selected, onSelect, direction = "LR", showCounts
       edges={rfEdges}
       nodeTypes={nodeTypes}
       onNodeClick={(_, n) => onSelect(n.id)}
+      onNodeDoubleClick={(_, n) => onOpen?.((n.data as NodeData).node)}
+      zoomOnDoubleClick={!onOpen}
       onPaneClick={() => onSelect(null)}
       nodesConnectable={false}
       nodesDraggable

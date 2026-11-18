@@ -1,40 +1,100 @@
 "use client";
 
-import { Boxes, FileCode, GitCompare, MessagesSquare, Network, RefreshCw, ScrollText } from "lucide-react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo } from "react";
-import { api } from "@/lib/api";
-import { useAsync, useHotkey, writePref } from "@/lib/hooks";
-import { Architecture } from "@/components/workspace/architecture";
-import { CodeExplorer } from "@/components/workspace/code-explorer";
-import { Compare } from "@/components/workspace/compare";
-import { Investigate } from "@/components/workspace/investigate";
-import { NavContext, type View, type WorkspaceNav, getEvidence } from "@/components/workspace/nav";
-import { Overview } from "@/components/workspace/overview";
-import { ReportPanel } from "@/components/workspace/report";
-import { Button, ErrorState, Spinner, cn } from "@/components/ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
+import { api, type Snapshot } from "@/lib/api";
+import { useAsync, useHotkey, usePref, writePref } from "@/lib/hooks";
+import { Assistant } from "@/components/workspace/assistant";
+import { Canvas } from "@/components/workspace/canvas";
+import { Explorer } from "@/components/workspace/explorer";
+import { NavContext, TAB_PARAMS, type Selection, type Tab, type View, type WorkspaceNav, getEvidence, keyPath, symbolLabel, tabFromParams } from "@/components/workspace/nav";
+import { ErrorState, Spinner } from "@/components/ui";
 
-const VIEWS: { id: View; label: string; icon: typeof Boxes }[] = [
-  { id: "overview", label: "Overview", icon: Boxes },
-  { id: "code", label: "Code", icon: FileCode },
-  { id: "architecture", label: "Architecture", icon: Network },
-  { id: "investigate", label: "Investigate", icon: MessagesSquare },
-  { id: "report", label: "Report", icon: ScrollText },
-  { id: "compare", label: "Compare", icon: GitCompare },
-];
+const MAX_TABS = 12;
+const OVERVIEW: Tab = { id: "overview", view: "overview", title: "Overview", params: { view: "overview" } };
+
+function defaultSelection(active: Tab): Selection | null {
+  const key = active.view === "symbol" ? active.params.key : undefined;
+  if (key) return { kind: key.startsWith("file:") ? "file" : key.startsWith("route:") ? "route" : "symbol", key, label: symbolLabel(key), path: keyPath(key) };
+  const file = active.view === "code" ? active.params.file : undefined;
+  if (file) return { kind: "file", key: `file:${file}`, label: file.split("/").pop() ?? file, path: file };
+  return null;
+}
+
+function readTabs(snapshotId: number): Tab[] {
+  try {
+    const raw = window.localStorage.getItem(`ip.tabs.${snapshotId}`);
+    const parsed = raw ? (JSON.parse(raw) as Tab[]) : [];
+    return Array.isArray(parsed) ? parsed.filter((t) => t && typeof t.id === "string" && t.params) : [];
+  } catch {
+    return [];
+  }
+}
 
 export function WorkspaceView() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
+  const snap = useAsync(() => api.snapshot(id), [id]);
+
+  if (snap.error) return <div className="p-6"><ErrorState error={snap.error} onRetry={snap.reload} /></div>;
+  if (!snap.data) return <div className="p-6"><Spinner label="Loading workspace" /></div>;
+  // Keyed by snapshot: tabs, selection and assistant state never leak between snapshots.
+  return <Workspace key={snap.data.id} snapshot={snap.data} />;
+}
+
+function Workspace({ snapshot }: { snapshot: Snapshot }) {
   const search = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const view = (VIEWS.some((v) => v.id === search.get("view")) ? search.get("view") : "overview") as View;
-  const snap = useAsync(() => api.snapshot(id), [id]);
+  const sid = snapshot.id;
+  const [stored, setStored] = useState<Tab[]>(() => (typeof window === "undefined" ? [] : readTabs(sid)));
+  // A selection belongs to the tab it was made in; other tabs fall back to what they show.
+  const [picked, setPicked] = useState<{ tabId: string; sel: Selection | null } | null>(null);
+  const askerRef = useRef<((question: string, send: boolean) => void) | null>(null);
+  const pendingAsk = useRef<{ question: string; send: boolean } | null>(null);
+  const [assistantPref, setAssistantPref] = usePref("ip.assistant", "open");
+  const [explorerPref, setExplorerPref] = usePref("ip.explorer", "open");
+  const assistantOpen = assistantPref === "open";
+  const explorerRef = usePanelRef();
+  const assistantRef = usePanelRef();
+  const layout = useDefaultLayout({ id: "ip.workspace.layout.v2" });
+
+  const active = useMemo(() => tabFromParams(new URLSearchParams(search.toString())), [search]);
 
   useEffect(() => {
-    if (snap.data) writePref("ip.lastSnapshot", String(snap.data.id));
-  }, [snap.data]);
+    writePref("ip.lastSnapshot", String(sid));
+  }, [sid]);
+
+  // Old `?view=investigate` links: show the assistant beside the overview.
+  useEffect(() => {
+    if (search.get("view") === "investigate") {
+      setAssistantPref("open");
+      const sp = new URLSearchParams(search.toString());
+      sp.set("view", "overview");
+      router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
+    }
+  }, [search, router, pathname, setAssistantPref]);
+
+  // Open tabs = remembered tabs + the context the URL shows (with its latest parameters). Updated while
+  // rendering (not in an effect) so that every navigation — including browser back/forward — is kept.
+  const [closing, setClosing] = useState<string | null>(null);
+  if (closing && closing !== active.id) setClosing(null);
+  const tabs = useMemo(() => {
+    const i = stored.findIndex((t) => t.id === active.id);
+    const base = stored.filter((t) => t.id !== "overview");
+    const next = i === -1 ? (closing === active.id ? base : [...base, active].slice(-MAX_TABS)) : stored.map((t, j) => (j === i ? active : t)).filter((t) => t.id !== "overview");
+    return [OVERVIEW, ...next];
+  }, [stored, active, closing]);
+  if (JSON.stringify(tabs) !== JSON.stringify(stored)) setStored(tabs);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`ip.tabs.${sid}`, JSON.stringify(tabs));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [tabs, sid]);
 
   const setParams = useCallback(
     (patch: Record<string, string | null>) => {
@@ -48,83 +108,173 @@ export function WorkspaceView() {
     [pathname, router, search],
   );
 
-  const nav = useMemo<WorkspaceNav>(
-    () => ({
-      snapshotId: id,
-      view,
-      setView: (v) => setParams({ view: v }),
-      openSource: ({ path, start, end, sym }) =>
-        setParams({ view: "code", file: path, l: start ? `${start}-${end ?? start}` : null, sym: sym ?? null }),
-      openEvidence: async (eid) => {
-        const ev = await getEvidence(eid);
-        setParams({ view: "code", file: ev.path, l: `${ev.start_line}-${ev.end_line}`, sym: null });
-      },
-      focusGraph: (key, tab) => setParams({ view: "architecture", gview: "focus", focus: key, tab: tab ?? null }),
-      ask: (question) => setParams({ view: "investigate", q: question }),
-      param: (name) => search.get(name),
-      setParams,
-    }),
-    [id, view, setParams, search],
+  /** Switch the active context: replaces tab parameters, keeps the rest (e.g. the open conversation). */
+  const go = useCallback(
+    (tabParams: Record<string, string>, push = true) => {
+      const sp = new URLSearchParams(search.toString());
+      for (const k of TAB_PARAMS) sp.delete(k);
+      for (const [k, v] of Object.entries(tabParams)) sp.set(k, v);
+      const url = `${pathname}?${sp.toString()}`;
+      if (push) router.push(url, { scroll: false });
+      else router.replace(url, { scroll: false });
+    },
+    [pathname, router, search],
   );
 
+  const setAssistantOpen = useCallback(
+    (open: boolean) => {
+      setAssistantPref(open ? "open" : "closed");
+      const p = assistantRef.current;
+      if (p) {
+        if (open) p.expand();
+        else p.collapse();
+      }
+    },
+    [assistantRef, setAssistantPref],
+  );
+
+  const nav = useMemo<WorkspaceNav>(() => {
+    const byId = (tid: string) => tabs.find((t) => t.id === tid);
+    return {
+      snapshotId: sid,
+      snapshot,
+      view: active.view,
+      tabs,
+      activeTabId: active.id,
+      activate: (tid) => {
+        const t = byId(tid);
+        if (t) go(t.params, false);
+      },
+      close: (tid) => {
+        if (tid === "overview") return;
+        const idx = tabs.findIndex((t) => t.id === tid);
+        const remaining = tabs.filter((t) => t.id !== tid);
+        setStored(remaining);
+        if (tid === active.id) {
+          setClosing(tid);
+          const next = remaining[Math.min(idx, remaining.length - 1)] ?? remaining[0];
+          go(next ? next.params : { view: "overview" }, false);
+        }
+      },
+      setView: (v: View) => {
+        if (v === "investigate") return setAssistantOpen(true);
+        if (v === "code") {
+          const lastFile = [...tabs].reverse().find((t) => t.view === "code");
+          return go(lastFile ? lastFile.params : { view: "code" });
+        }
+        const existing = tabs.find((t) => t.view === v);
+        go(existing ? existing.params : { view: v });
+      },
+      openSource: ({ path, start, end, sym }) => {
+        const p: Record<string, string> = { view: "code", file: path };
+        if (start) p.l = `${start}-${end ?? start}`;
+        if (sym) p.sym = sym;
+        go(p);
+      },
+      openEvidence: async (eid) => {
+        const ev = await getEvidence(eid);
+        go({ view: "code", file: ev.path, l: `${ev.start_line}-${ev.end_line}` });
+      },
+      openSymbol: (key, section) => go({ view: "symbol", key, ...(section ? { section } : {}) }),
+      focusGraph: (key, tab) => {
+        if (tab === "flow") return go({ view: "flow", entry: key });
+        if (key.startsWith("sym:") || key.startsWith("file:")) return go({ view: "symbol", key, section: tab === "impact" ? "impact" : "usage" });
+        go({ view: "architecture", gview: "focus", focus: key, node: key });
+      },
+      openGraph: (p) => {
+        const params: Record<string, string> = { view: "architecture" };
+        if (p?.gview) params.gview = p.gview;
+        if (p?.focus) params.focus = p.focus;
+        if (p?.node) params.node = p.node;
+        if (p?.prefix) params.prefix = p.prefix;
+        if (!p) {
+          const existing = tabs.find((t) => t.view === "architecture");
+          if (existing) return go(existing.params);
+        }
+        go(params);
+      },
+      openFlow: (startKey) => go({ view: "flow", entry: startKey }),
+      ask: (question, opts) => {
+        setAssistantOpen(true);
+        if (askerRef.current) askerRef.current(question, !!opts?.send);
+        else pendingAsk.current = { question, send: !!opts?.send };
+      },
+      setAsker: (fn) => {
+        askerRef.current = fn;
+        const queued = pendingAsk.current;
+        if (fn && queued) {
+          pendingAsk.current = null;
+          fn(queued.question, queued.send);
+        }
+      },
+      selection: picked && picked.tabId === active.id ? picked.sel : defaultSelection(active),
+      setSelection: (s) => setPicked((prev) => (prev?.tabId === active.id && prev.sel?.key === s?.key && prev.sel?.start === s?.start ? prev : { tabId: active.id, sel: s })),
+      assistantOpen,
+      setAssistantOpen,
+      param: (name) => search.get(name),
+      setParams,
+    };
+  }, [sid, snapshot, active, tabs, go, setAssistantOpen, picked, assistantOpen, search, setParams]);
+
+  useHotkey("mod+b", () => {
+    const p = explorerRef.current;
+    if (!p) return;
+    if (p.isCollapsed()) {
+      p.expand();
+      setExplorerPref("open");
+    } else {
+      p.collapse();
+      setExplorerPref("closed");
+    }
+  }, { allowInInputs: true });
+  useHotkey("mod+i", () => setAssistantOpen(!assistantOpen), { allowInInputs: true });
   useHotkey("alt+1", () => nav.setView("overview"));
   useHotkey("alt+2", () => nav.setView("code"));
   useHotkey("alt+3", () => nav.setView("architecture"));
-  useHotkey("alt+4", () => nav.setView("investigate"));
+  useHotkey("alt+4", () => setAssistantOpen(true));
   useHotkey("alt+5", () => nav.setView("report"));
   useHotkey("alt+6", () => nav.setView("compare"));
-
-  if (snap.error) return <div className="p-6"><ErrorState error={snap.error} onRetry={snap.reload} /></div>;
-  if (!snap.data) return <div className="p-6"><Spinner label="Loading workspace" /></div>;
-  const s = snap.data;
+  useHotkey("alt+w", () => nav.close(active.id));
 
   return (
     <NavContext.Provider value={nav}>
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-panel px-3" role="tablist" aria-label="Workspace views">
-          {VIEWS.map((v, i) => (
-            <button
-              key={v.id}
-              role="tab"
-              aria-selected={view === v.id}
-              title={`${v.label} (Alt+${i + 1})`}
-              onClick={() => nav.setView(v.id)}
-              className={cn(
-                "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
-                view === v.id ? "bg-panel-3 text-fg" : "text-fg-3 hover:bg-panel-2 hover:text-fg",
-              )}
-            >
-              <v.icon className="h-3.5 w-3.5" aria-hidden />
-              {v.label}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-1.5">
-            <RefreshButton repositoryId={s.repository.id} />
-          </div>
-        </div>
-        <div className="min-h-0 flex-1">
-          {view === "overview" && <Overview snapshot={s} />}
-          {view === "code" && <CodeExplorer snapshot={s} />}
-          {view === "architecture" && <Architecture snapshot={s} />}
-          {view === "investigate" && <Investigate snapshot={s} />}
-          {view === "report" && <ReportPanel snapshot={s} />}
-          {view === "compare" && <Compare snapshot={s} />}
-        </div>
-      </div>
+      <Group orientation="horizontal" id="ip.workspace.layout.v2" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="h-full">
+        <Panel
+          id="explorer"
+          panelRef={explorerRef}
+          defaultSize="20"
+          minSize="14"
+          maxSize="34"
+          collapsible
+          collapsedSize="0"
+          onResize={(size) => setExplorerPref(size.asPercentage === 0 ? "closed" : "open")}
+          className="flex min-h-0 flex-col border-r border-line bg-panel"
+          data-collapsed={explorerPref === "closed" || undefined}
+        >
+          <Explorer />
+        </Panel>
+        <Separator aria-label="Resize repository explorer" />
+        <Panel id="canvas" defaultSize="52" minSize="30" className="flex min-h-0 min-w-0 flex-col">
+          <Canvas />
+        </Panel>
+        <Separator aria-label="Resize investigation assistant" />
+        <Panel
+          id="assistant"
+          panelRef={assistantRef}
+          defaultSize={assistantOpen ? "28" : "0"}
+          minSize="20"
+          maxSize="50"
+          collapsible
+          collapsedSize="0"
+          onResize={(size) => {
+            const open = size.asPercentage > 0;
+            if (open !== assistantOpen) setAssistantPref(open ? "open" : "closed");
+          }}
+          className="flex min-h-0 flex-col border-l border-line bg-panel"
+        >
+          {assistantOpen && <Assistant />}
+        </Panel>
+      </Group>
     </NavContext.Provider>
-  );
-}
-
-function RefreshButton({ repositoryId }: { repositoryId: number }) {
-  const router = useRouter();
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      title="Re-check the remote HEAD; a changed commit is analysed incrementally into a new snapshot"
-      onClick={() => api.refreshRepository(repositoryId).then((r) => router.push(`/jobs/${r.job.id}`))}
-    >
-      <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Refresh analysis
-    </Button>
   );
 }

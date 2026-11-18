@@ -58,11 +58,15 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function SourceView({ source, highlight, onLineClick, markers }: {
+export function SourceView({ source, highlight, onLineClick, markers, findLines, currentFind }: {
   source: Source;
   highlight?: [number, number] | null;
   onLineClick?: (line: number) => void;
   markers?: Map<number, string>;
+  /** Lines containing the current find-in-file query. */
+  findLines?: Set<number>;
+  /** The match the user navigated to; scrolled into view. */
+  currentFind?: number | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lines = useMemo(() => {
@@ -85,6 +89,12 @@ export function SourceView({ source, highlight, onLineClick, markers }: {
     if (el) scrollRef.current.scrollTop = Math.max(0, el.offsetTop - scrollRef.current.clientHeight / 3);
   }, [highlight, source]);
 
+  useEffect(() => {
+    if (!currentFind || !scrollRef.current) return;
+    const el = scrollRef.current.querySelector<HTMLElement>(`[data-line="${currentFind}"]`);
+    if (el) scrollRef.current.scrollTop = Math.max(0, el.offsetTop - scrollRef.current.clientHeight / 3);
+  }, [currentFind]);
+
   const [lo, hi] = highlight ?? [0, -1];
   return (
     <div ref={scrollRef} className="relative h-full overflow-auto bg-code" data-testid="source-view">
@@ -94,15 +104,22 @@ export function SourceView({ source, highlight, onLineClick, markers }: {
             const n = source.start_line + i;
             const hit = n >= lo && n <= hi;
             const marker = markers?.get(n);
+            const found = findLines?.has(n);
             return (
-              <tr key={n} data-line={n} data-highlighted={hit || undefined} className={cn(hit && "bg-[var(--hl-line)]")}>
+              <tr
+                key={n}
+                data-line={n}
+                data-highlighted={hit || undefined}
+                data-find={found || undefined}
+                className={cn(hit && "bg-[var(--hl-line)]", found && !hit && "bg-warn-soft", currentFind === n && "outline outline-1 -outline-offset-1 outline-warn")}
+              >
                 <td
                   className={cn(
                     "sticky left-0 w-[1%] cursor-pointer border-r border-line bg-code px-3 text-right text-fg-3 select-none hover:text-fg",
                     hit && "text-accent",
                   )}
                   onClick={() => onLineClick?.(n)}
-                  title={marker}
+                  title={marker ? `${marker} — line ${n}` : `Line ${n}`}
                 >
                   <span className="inline-flex items-center gap-1.5">
                     {marker && <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />}

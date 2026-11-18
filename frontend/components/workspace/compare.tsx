@@ -1,9 +1,11 @@
 "use client";
 
-import { GitCompare } from "lucide-react";
+import { GitCompare, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { api, type Snapshot } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
-import { Badge, EmptyState, ErrorState, Metric, Panel, ShortSha, SkeletonRows, cn, formatTime } from "@/components/ui";
+import { Badge, Button, EmptyState, ErrorState, Metric, Panel, ShortSha, SkeletonRows, cn, formatTime } from "@/components/ui";
 import { EvidenceChip, useNav } from "@/components/workspace/nav";
 
 export function Compare({ snapshot: s }: { snapshot: Snapshot }) {
@@ -15,7 +17,15 @@ export function Compare({ snapshot: s }: { snapshot: Snapshot }) {
   const c = cmp.data;
 
   if (repo.data && others.length === 0)
-    return <EmptyState icon={<GitCompare className="h-6 w-6" />} title="Only one analysed snapshot">Refresh the analysis after the repository changes to compare commits.</EmptyState>;
+    return (
+      <EmptyState
+        icon={<GitCompare className="h-6 w-6" />}
+        title="Only one analysed snapshot"
+        action={<RefreshForCompare repositoryId={s.repository.id} />}
+      >
+        Comparison needs a second analysed commit of {s.repository.owner}/{s.repository.name}. Refresh the analysis to check GitHub for a newer commit; this snapshot is kept.
+      </EmptyState>
+    );
 
   return (
     <div className="h-full overflow-auto">
@@ -110,5 +120,32 @@ function DiffList({ items }: { items: { k: string; sign: string; label: string; 
         </li>
       ))}
     </ul>
+  );
+}
+
+function RefreshForCompare({ repositoryId }: { repositoryId: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  return (
+    <div className="mt-2 flex flex-col items-center gap-2">
+      <Button
+        variant="primary"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          api.refreshRepository(repositoryId).then(
+            (r) => router.push(`/jobs/${r.job.id}`),
+            (e) => {
+              setError(e);
+              setBusy(false);
+            },
+          );
+        }}
+      >
+        <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Refresh analysis
+      </Button>
+      <ErrorState error={error} compact />
+    </div>
   );
 }

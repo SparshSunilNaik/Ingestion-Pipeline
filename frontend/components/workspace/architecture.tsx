@@ -1,55 +1,68 @@
 "use client";
 
-import { Crosshair, FileCode, ListFilter, Play, Route, Search, Workflow } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Crosshair, FileCode, FolderTree, ListFilter, Play, Radar, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Group, Panel as RPanel, Separator, useDefaultLayout } from "react-resizable-panels";
-import { api, type EntryPoint, type FlowStep, type Snapshot, type ViewEdge, type ViewNode } from "@/lib/api";
+import { api, type Snapshot } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
-import { Badge, Button, EmptyState, ErrorState, ResolutionBadge, Segmented, SkeletonRows, Spinner, cn } from "@/components/ui";
-import { RelatedBlock } from "@/components/workspace/code-explorer";
-import { GraphCanvas, GraphLegend, KIND_VAR } from "@/components/workspace/graph-canvas";
-import { EvidenceChip, useNav } from "@/components/workspace/nav";
+import { questionFor } from "@/components/workspace/actions";
+import { GraphCanvas, GraphLegend } from "@/components/workspace/graph-canvas";
+import { EvidenceChip, keyPath, symbolLabel, useNav } from "@/components/workspace/nav";
+import { RelatedBlock } from "@/components/workspace/related";
+import { Badge, Button, EmptyState, ErrorState, IconButton, Segmented, SkeletonRows, Spinner, cn } from "@/components/ui";
 
-type GView = "modules" | "files" | "calls" | "routes" | "focus" | "flows";
+type GView = "modules" | "files" | "calls" | "routes" | "focus";
 const GVIEWS: { id: GView; label: string; title: string }[] = [
-  { id: "modules", label: "Modules", title: "Directories and resolved imports between them" },
-  { id: "files", label: "Files", title: "File dependency graph (imports), packages and routes" },
-  { id: "calls", label: "Calls", title: "Function / method call graph and inheritance" },
-  { id: "routes", label: "API routes", title: "Routes, their handlers and direct callees" },
-  { id: "focus", label: "Focus", title: "Neighbourhood of one node" },
-  { id: "flows", label: "Flows", title: "Execution-flow tracing from entry points" },
+  { id: "modules", label: "Directories", title: "Directories and the resolved imports between them. Double-click a directory to open its files." },
+  { id: "files", label: "Files", title: "Files and their resolved imports" },
+  { id: "calls", label: "Calls", title: "Functions and methods: resolved calls and inheritance" },
+  { id: "routes", label: "API routes", title: "Routes, their handlers and what the handlers call" },
+  { id: "focus", label: "Focus", title: "The neighbourhood of one node" },
 ];
 const RESOLUTIONS = ["resolved", "ambiguous", "external", "unresolved"] as const;
 
+/** Small repositories read better as a file graph; larger ones start from directories. */
+export function defaultGraphView(s: Snapshot): GView {
+  return (s.inventory_summary.source_directories?.length ?? 0) > 3 || s.coverage.analyzed_files > 60 ? "modules" : "files";
+}
+
 export function Architecture({ snapshot: s }: { snapshot: Snapshot }) {
   const nav = useNav();
-  const gview = (GVIEWS.some((g) => g.id === nav.param("gview")) ? nav.param("gview") : nav.param("focus") ? "focus" : "modules") as GView;
+  const requested = nav.param("gview");
+  const gview = (GVIEWS.some((g) => g.id === requested) ? requested : nav.param("focus") ? "focus" : defaultGraphView(s)) as GView;
   const focus = nav.param("focus");
+  const prefix = nav.param("prefix");
   const [radius, setRadius] = useState(1);
   const layout = useDefaultLayout({ id: "ip.arch.layout" });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-panel px-3 py-1.5">
-        <Segmented label="Graph view" value={gview} onChange={(v) => nav.setParams({ gview: v })} options={GVIEWS.map((g) => ({ id: g.id, label: g.label, title: g.title }))} />
+        <Segmented label="Graph view" value={gview} onChange={(v) => nav.setParams({ gview: v, ...(v !== "focus" ? { focus: null } : {}) })} options={GVIEWS.map((g) => ({ id: g.id, label: g.label, title: g.title }))} />
         {gview === "focus" && (
           <Segmented label="Radius" value={String(radius)} onChange={(v) => setRadius(Number(v))} options={[{ id: "1", label: "1 hop" }, { id: "2", label: "2 hops" }, { id: "3", label: "3 hops" }]} />
         )}
+        {prefix && gview !== "focus" && (
+          <span className="inline-flex h-7 items-center gap-1 rounded-md border border-accent/40 bg-accent-soft px-2 font-mono text-[11.5px] text-accent">
+            <FolderTree className="h-3.5 w-3.5" aria-hidden /> {prefix}/
+            <button onClick={() => nav.setParams({ prefix: null })} aria-label="Show the whole repository" className="ml-0.5 rounded hover:bg-panel-3"><X className="h-3 w-3" /></button>
+          </span>
+        )}
         <FocusSearch snapshotId={s.id} />
       </div>
-      {gview === "flows" ? (
-        <Flows snapshot={s} />
-      ) : (
-        <Group orientation="horizontal" id="ip.arch.layout" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1">
-          <RPanel id="graph" defaultSize="70" minSize="40" className="flex min-h-0 flex-col">
-            <GraphPane snapshot={s} view={gview} focus={focus} radius={radius} />
-          </RPanel>
-          <Separator />
-          <RPanel id="inspector" defaultSize="30" minSize="20" className="flex min-h-0 flex-col bg-panel">
-            <Inspector snapshot={s} />
-          </RPanel>
-        </Group>
-      )}
+      <Group orientation="horizontal" id="ip.arch.layout" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1">
+        <RPanel id="graph" defaultSize="70" minSize="40" className="flex min-h-0 flex-col">
+          <GraphPane snapshot={s} view={gview} focus={focus} radius={radius} prefix={prefix} />
+        </RPanel>
+        {(nav.param("node") || focus) && (
+          <>
+            <Separator aria-label="Resize graph inspector" />
+            <RPanel id="inspector" defaultSize="32" minSize="22" className="flex min-h-0 flex-col bg-panel">
+              <Inspector snapshot={s} />
+            </RPanel>
+          </>
+        )}
+      </Group>
     </div>
   );
 }
@@ -67,33 +80,45 @@ function FocusSearch({ snapshotId }: { snapshotId: number }) {
     try {
       const r = await api.retrieve(snapshotId, q.trim(), 5);
       const hit = r.results.find((x) => x.kind === "symbol") ?? r.results.find((x) => x.kind === "file");
-      if (hit) nav.setParams({ gview: "focus", focus: hit.key, node: hit.key });
+      if (hit) nav.setParams({ gview: "focus", focus: hit.key, node: hit.key, prefix: null });
       else setMiss(true);
     } finally {
       setBusy(false);
     }
   }
   return (
-    <form onSubmit={go} className="ml-auto flex items-center gap-1.5">
+    <form onSubmit={go} className="ml-auto flex items-center gap-1.5" role="search">
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-fg-3" aria-hidden />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find & focus symbol or file" aria-label="Find and focus a node" className={cn("h-7 w-60 rounded-md border bg-panel-2 pr-2 pl-7 text-[12px] outline-none focus:border-accent", miss ? "border-bad/60" : "border-line")} />
+        <input
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setMiss(false); }}
+          placeholder="Find a symbol or file to focus"
+          aria-label="Find and focus a node"
+          aria-invalid={miss || undefined}
+          className={cn("h-7 w-60 rounded-md border bg-panel-2 pr-2 pl-7 text-[12px] outline-none focus:border-accent", miss ? "border-bad/60" : "border-line")}
+        />
       </div>
-      <Button size="sm" type="submit" disabled={busy}><Crosshair className="h-3.5 w-3.5" /> Focus</Button>
+      <Button size="sm" type="submit" disabled={busy}><Crosshair className="h-3.5 w-3.5" aria-hidden /> Focus</Button>
+      {miss && <span className="text-[11.5px] text-bad" role="status">No match</span>}
     </form>
   );
 }
 
-function GraphPane({ snapshot: s, view, focus, radius }: { snapshot: Snapshot; view: GView; focus: string | null; radius: number }) {
+function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Snapshot; view: GView; focus: string | null; radius: number; prefix: string | null }) {
   const nav = useNav();
   const selected = nav.param("node");
   const graph = useAsync(
-    () => (view === "focus" && !focus ? Promise.resolve(null) : api.graphView(s.id, { view, focus: view === "focus" ? focus ?? undefined : undefined, radius, limit: view === "modules" ? 120 : 220 })),
-    [s.id, view, focus, radius],
+    () =>
+      view === "focus" && !focus
+        ? Promise.resolve(null)
+        : api.graphView(s.id, { view, focus: view === "focus" ? focus ?? undefined : undefined, radius, path_prefix: view !== "focus" ? prefix ?? undefined : undefined, limit: view === "modules" ? 120 : 220 }),
+    [s.id, view, focus, radius, prefix],
   );
   const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(new Set());
-  const [hiddenRes, setHiddenRes] = useState<Set<string>>(new Set());
+  const [hiddenRes, setHiddenRes] = useState<Set<string>>(new Set(view === "calls" ? ["unresolved"] : []));
   const [hideIsolated, setHideIsolated] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const data = graph.data;
   const edgeKinds = useMemo(() => [...new Set((data?.edges ?? []).map((e) => e.kind))].sort(), [data]);
   const nodeKinds = useMemo(() => [...new Set((data?.nodes ?? []).map((n) => n.kind))].sort(), [data]);
@@ -110,43 +135,78 @@ function GraphPane({ snapshot: s, view, focus, radius }: { snapshot: Snapshot; v
     else n.add(v);
     setter(n);
   };
+  const hiddenCount = hiddenKinds.size + hiddenRes.size;
 
-  if (view === "focus" && !focus) return <EmptyState icon={<Crosshair className="h-6 w-6" />} title="Nothing focused">Use “Find & focus”, or choose “Impact” / “Usage” from any symbol.</EmptyState>;
+  if (view === "focus" && !focus) {
+    return (
+      <EmptyState icon={<Crosshair className="h-6 w-6" />} title="Nothing focused">
+        Search for a symbol or file above, or use &ldquo;In graph&rdquo; from any symbol to see its neighbourhood.
+      </EmptyState>
+    );
+  }
   return (
     <>
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-1.5">
-        <span className="inline-flex items-center gap-1 text-[11.5px] text-fg-3"><ListFilter className="h-3.5 w-3.5" /> edges</span>
-        {edgeKinds.map((k) => (
-          <label key={k} className="inline-flex cursor-pointer items-center gap-1 text-[12px] text-fg-2">
-            <input type="checkbox" checked={!hiddenKinds.has(k)} onChange={() => toggle(hiddenKinds, setHiddenKinds, k)} className="accent-[var(--accent)]" />
-            {k.replaceAll("_", " ")}
-          </label>
-        ))}
-        <span className="h-3 w-px bg-line" />
-        {RESOLUTIONS.map((r) => (
-          <label key={r} className="inline-flex cursor-pointer items-center gap-1 text-[12px] text-fg-2">
-            <input type="checkbox" checked={!hiddenRes.has(r)} onChange={() => toggle(hiddenRes, setHiddenRes, r)} className="accent-[var(--accent)]" />
-            {r}
-          </label>
-        ))}
-        <span className="h-3 w-px bg-line" />
+        <Button size="sm" variant="ghost" onClick={() => setFiltersOpen(!filtersOpen)} aria-expanded={filtersOpen}>
+          <ListFilter className="h-3.5 w-3.5" aria-hidden /> Filters{hiddenCount ? ` (${hiddenCount} hidden)` : ""}
+        </Button>
         <label className="inline-flex cursor-pointer items-center gap-1 text-[12px] text-fg-2" title="Hide nodes without any visible relationship">
           <input type="checkbox" checked={hideIsolated} onChange={() => setHideIsolated(!hideIsolated)} className="accent-[var(--accent)]" />
-          hide isolated
+          hide unconnected
         </label>
-        {data && <span className="ml-auto text-[11.5px] text-fg-3">{nodes.length} of {data.nodes.length} nodes · {edges.length} edges{data.truncated ? " · limited to most-connected" : ""}</span>}
+        {data && (
+          <span className="ml-auto text-[11.5px] text-fg-3" aria-live="polite">
+            {nodes.length} of {data.nodes.length} nodes · {edges.length} relationships{data.truncated ? " · showing the most connected" : ""}
+          </span>
+        )}
+        {filtersOpen && (
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+            <span className="text-[11px] text-fg-3 uppercase">Relationships</span>
+            {edgeKinds.map((k) => (
+              <label key={k} className="inline-flex cursor-pointer items-center gap-1 text-[12px] text-fg-2">
+                <input type="checkbox" checked={!hiddenKinds.has(k)} onChange={() => toggle(hiddenKinds, setHiddenKinds, k)} className="accent-[var(--accent)]" />
+                {k.replaceAll("_", " ")}
+              </label>
+            ))}
+            <span className="h-3 w-px bg-line" />
+            <span className="text-[11px] text-fg-3 uppercase">Resolution</span>
+            {RESOLUTIONS.map((r) => (
+              <label key={r} className="inline-flex cursor-pointer items-center gap-1 text-[12px] text-fg-2" title={r === "unresolved" ? "Calls whose target could not be determined statically" : r === "ambiguous" ? "Several possible targets (e.g. overridden methods)" : undefined}>
+                <input type="checkbox" checked={!hiddenRes.has(r)} onChange={() => toggle(hiddenRes, setHiddenRes, r)} className="accent-[var(--accent)]" />
+                {r}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
       <div className="relative min-h-0 flex-1" data-testid="graph-canvas">
         {graph.error ? <div className="p-3"><ErrorState error={graph.error} onRetry={graph.reload} /></div> : null}
-        {!data && !graph.error && <div className="p-4"><Spinner label="Building graph" /></div>}
-        {data && data.nodes.length === 0 && <EmptyState title="No nodes in this view" />}
-        {data && data.nodes.length > 0 && nodes.length === 0 && <EmptyState title="All nodes are isolated with the current filters" />}
+        {!data && !graph.error && <div className="p-4"><Spinner label="Laying out the graph" /></div>}
+        {data && data.nodes.length === 0 && (
+          <EmptyState title="Nothing to show in this view">
+            {view === "routes" ? "No API routes were detected in this snapshot." : prefix ? `No nodes under ${prefix}/.` : "No relationships of this kind were resolved."}
+          </EmptyState>
+        )}
+        {data && data.nodes.length > 0 && nodes.length === 0 && <EmptyState title="Every node is unconnected with the current filters">Untick &ldquo;hide unconnected&rdquo; or show more relationship kinds.</EmptyState>}
         {data && nodes.length > 0 && (
-          <GraphCanvas nodes={nodes} edges={edges} selected={selected} onSelect={(k) => nav.setParams({ node: k })} showCounts={view === "modules"} fitKey={`${view}:${focus}:${radius}`} />
+          <GraphCanvas
+            nodes={nodes}
+            edges={edges}
+            selected={selected}
+            onSelect={(k) => nav.setParams({ node: k })}
+            onOpen={(n) => {
+              if (n.kind === "module") nav.setParams({ gview: "files", prefix: n.path ?? n.label, node: null });
+              else if (n.kind === "file" && n.path) nav.openSource({ path: n.path });
+              else if (n.key.startsWith("sym:") || n.kind === "route") nav.openSymbol(n.key);
+            }}
+            showCounts={view === "modules"}
+            fitKey={`${view}:${focus}:${radius}:${prefix}`}
+          />
         )}
         <div className="pointer-events-none absolute top-2 left-2 rounded-md border border-line bg-panel/90 px-2 py-1">
           <GraphLegend kinds={nodeKinds} />
         </div>
+        {data && nodes.length > 0 && <div className="pointer-events-none absolute right-2 bottom-[108px] rounded bg-panel/80 px-1.5 py-0.5 text-[10.5px] text-fg-3">Click to inspect · double-click to open</div>}
       </div>
     </>
   );
@@ -155,187 +215,76 @@ function GraphPane({ snapshot: s, view, focus, radius }: { snapshot: Snapshot; v
 function Inspector({ snapshot: s }: { snapshot: Snapshot }) {
   const nav = useNav();
   const key = nav.param("node") ?? nav.param("focus");
-  const tab = (nav.param("tab") as "relations" | "usage" | "impact" | null) ?? "relations";
-  if (!key) return <EmptyState icon={<Crosshair className="h-5 w-5" />} title="Select a node">Click any node to inspect its relationships, usage and potential impact.</EmptyState>;
+  const { setSelection } = nav;
+  useEffect(() => {
+    if (!key) return;
+    const kind = key.startsWith("sym:") ? "symbol" : key.startsWith("file:") ? "file" : key.startsWith("route:") ? "route" : key.startsWith("pkg:") ? "package" : "module";
+    setSelection({ kind, key, label: symbolLabel(key), path: keyPath(key) });
+  }, [key, setSelection]);
+  if (!key) {
+    return (
+      <EmptyState icon={<Crosshair className="h-5 w-5" />} title="Select a node">
+        Click any node to see what it connects to. Double-click a directory to open its files, or a file to read it.
+      </EmptyState>
+    );
+  }
   const kind = key.startsWith("sym:") ? "symbol" : key.startsWith("file:") ? "file" : key.startsWith("route:") ? "route" : key.split(":")[0];
-  const label = key.startsWith("sym:") ? key.split("#")[1] : key.replace(/^[a-z]+:/, "");
-  const path = key.startsWith("sym:") ? key.slice(4).split("#")[0] : key.startsWith("file:") ? key.slice(5) : null;
-  const symbolLike = kind === "symbol" || kind === "file" || kind === "route";
+  const path = keyPath(key);
+  const isModule = kind === "module" || kind === "dir";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-line p-3">
         <div className="flex items-center gap-1.5">
-          <Badge tone="accent">{kind}</Badge>
-          {path && <button className="ml-auto text-[11.5px] text-accent hover:underline" onClick={() => nav.openSource({ path })}><FileCode className="mr-1 inline h-3 w-3" />source</button>}
+          <Badge tone="accent">{isModule ? "directory" : kind}</Badge>
+          <IconButton label="Clear selection" className="ml-auto" onClick={() => nav.setParams({ node: null })}><X className="h-3.5 w-3.5" /></IconButton>
         </div>
-        <div className="mt-1 font-mono text-[12.5px] break-all">{label}</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <Button size="sm" variant="ghost" onClick={() => nav.setParams({ gview: "focus", focus: key })}><Crosshair className="h-3.5 w-3.5" /> Focus</Button>
-          {(kind === "symbol" || kind === "route") && <Button size="sm" variant="ghost" onClick={() => nav.setParams({ gview: "flows", entry: key })}><Play className="h-3.5 w-3.5" /> Trace</Button>}
+        <div className="mt-1 font-mono text-[12.5px] break-all">{isModule ? key.replace(/^[a-z]+:/, "") : symbolLabel(key)}</div>
+        {path && <div className="truncate font-mono text-[11px] text-fg-3">{path}</div>}
+        <div className="mt-2 flex flex-wrap gap-1">
+          {isModule && <Button size="sm" variant="secondary" onClick={() => nav.setParams({ gview: "files", prefix: key.replace(/^[a-z]+:/, ""), node: null })}><FolderTree className="h-3.5 w-3.5" aria-hidden /> Open directory</Button>}
+          {path && <Button size="sm" variant="ghost" onClick={() => nav.openSource({ path, sym: key.startsWith("sym:") ? key : undefined })}><FileCode className="h-3.5 w-3.5" aria-hidden /> Source</Button>}
+          {!isModule && kind !== "pkg" && <Button size="sm" variant="ghost" onClick={() => nav.openSymbol(key, "impact")}><Radar className="h-3.5 w-3.5" aria-hidden /> Impact</Button>}
+          {(kind === "symbol" || kind === "route") && <Button size="sm" variant="ghost" onClick={() => nav.openFlow(key)}><Play className="h-3.5 w-3.5" aria-hidden /> Trace</Button>}
+          {!isModule && <Button size="sm" variant="ghost" onClick={() => nav.setParams({ gview: "focus", focus: key, prefix: null })}><Crosshair className="h-3.5 w-3.5" aria-hidden /> Focus</Button>}
+          {!isModule && kind !== "pkg" && (
+            <Button size="sm" variant="ghost" onClick={() => nav.ask(questionFor("explain", { kind: kind === "file" ? "file" : kind === "route" ? "route" : "symbol", key, label: symbolLabel(key), path }), { send: true })}>
+              Explain
+            </Button>
+          )}
         </div>
       </div>
-      {symbolLike && (
-        <div className="shrink-0 border-b border-line px-3 py-1.5">
-          <Segmented label="Inspector tab" value={tab} onChange={(v) => nav.setParams({ tab: v })} options={[{ id: "relations", label: "Usage" }, { id: "impact", label: "Impact" }]} />
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-auto p-3 text-[12.5px]">
-        {tab === "impact" ? <ImpactPanel snapshotId={s.id} nodeKey={key} /> : <UsagePanel snapshotId={s.id} nodeKey={key} />}
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-3 text-[12.5px]">{isModule || kind === "pkg" ? <ModuleSummary nodeKey={key} /> : <NodeUsage snapshotId={s.id} nodeKey={key} />}</div>
     </div>
   );
 }
 
-function UsagePanel({ snapshotId, nodeKey }: { snapshotId: number; nodeKey: string }) {
+function ModuleSummary({ nodeKey }: { nodeKey: string }) {
+  return (
+    <p className="text-fg-3">
+      {nodeKey.startsWith("pkg:")
+        ? "An external package. Its imports are counted on the edges; its own code is not analysed."
+        : "Edges show resolved imports between directories; their labels count the imports. Open the directory to see the files and their relationships."}
+    </p>
+  );
+}
+
+function NodeUsage({ snapshotId, nodeKey }: { snapshotId: number; nodeKey: string }) {
   const nav = useNav();
   const u = useAsync(() => api.usage(snapshotId, nodeKey), [snapshotId, nodeKey]);
-  if (u.error) return <ErrorState error={u.error} compact />;
+  if (u.error) return <ErrorState error={u.error} compact onRetry={u.reload} />;
   if (!u.data) return <SkeletonRows rows={6} />;
   const d = u.data;
-  const open = (r: { path: string | null; start_line: number | null; end_line: number | null; call_line?: number | null }) => r.path && nav.openSource({ path: r.path, start: r.call_line ?? r.start_line, end: r.call_line ?? r.end_line });
+  const select = (k: string) => nav.setParams({ node: k });
   return (
     <div className="space-y-3">
-      {d.definition.evidence_id && <div className="flex items-center gap-2"><span className="text-fg-3">Definition</span><EvidenceChip id={d.definition.evidence_id} /></div>}
-      <RelatedBlock title="Direct references" items={d.direct_references.map((r) => ({ key: r.key + r.call_line, label: r.label, sub: r.relation, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => open(r) }))} />
-      <RelatedBlock title="Importing files" items={d.importing_files.map((r) => ({ key: r.key, label: r.label, resolution: r.resolution, ev: r.evidence_id, onClick: () => open(r) }))} />
-      <RelatedBlock title="Direct callees" items={d.direct_callees.map((r) => ({ key: r.key, label: r.label, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Related API routes" items={d.related_routes.map((r) => ({ key: r.key, label: r.label, sub: `depth ${r.depth}`, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Upstream dependents (transitive)" hint="Reachability, depth > 1" items={d.upstream_transitive.slice(0, 25).map((r) => ({ key: r.key, label: r.label, sub: `depth ${r.depth}`, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Downstream dependencies (transitive)" items={d.downstream_transitive.slice(0, 25).map((r) => ({ key: r.key, label: r.label, sub: `depth ${r.depth}`, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <ul className="space-y-1 border-t border-line pt-2 text-[11.5px] text-fg-3">{d.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+      {d.definition.evidence_id && (
+        <div className="flex items-center gap-2"><span className="text-fg-3">Defined at</span><EvidenceChip id={d.definition.evidence_id} /></div>
+      )}
+      <RelatedBlock title="Used by" items={d.direct_references.map((r) => ({ key: r.key + r.call_line, label: r.label, sub: r.relation, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} empty="No resolved callers or subclasses." />
+      {d.imports && <RelatedBlock title="Imports" items={d.imports.map((r) => ({ key: r.key, label: r.label, resolution: r.resolution, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} />}
+      <RelatedBlock title="Imported by" items={d.importing_files.map((r) => ({ key: r.key, label: r.label, resolution: r.resolution, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} />
+      <RelatedBlock title="Calls" items={d.direct_callees.map((r) => ({ key: r.key + (r.call_line ?? ""), label: r.label, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} />
+      {d.related_routes.length > 0 && <RelatedBlock title="Reached from routes" items={d.related_routes.map((r) => ({ key: r.key, label: r.label, sub: `${r.depth} hops`, onClick: () => nav.openFlow(r.key) }))} />}
     </div>
-  );
-}
-
-function ImpactPanel({ snapshotId, nodeKey }: { snapshotId: number; nodeKey: string }) {
-  const nav = useNav();
-  const im = useAsync(() => api.impact(snapshotId, nodeKey), [snapshotId, nodeKey]);
-  if (im.error) return <ErrorState error={im.error} compact />;
-  if (!im.data) return <SkeletonRows rows={6} />;
-  const d = im.data;
-  return (
-    <div className="space-y-3">
-      <div className="rounded-md border border-warn/30 bg-warn-soft px-2 py-1.5 text-[12px] text-warn">Potential impact from static reachability — not guaranteed breakage.</div>
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <Stat n={d.direct_dependents.length} label="direct" />
-        <Stat n={d.transitive_dependents.length} label="transitive" />
-        <Stat n={d.potentially_affected_routes.length} label="routes" />
-      </div>
-      <RelatedBlock title="Direct dependents" items={d.direct_dependents.map((r) => ({ key: r.key, label: r.label, sub: r.via, resolution: r.resolution, ev: r.evidence_id, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Transitive dependents" items={d.transitive_dependents.slice(0, 40).map((r) => ({ key: r.key, label: r.label, sub: `depth ${r.depth} · ${r.via}`, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Potentially affected routes" items={d.potentially_affected_routes.map((r) => ({ key: r.key, label: r.label, onClick: () => nav.setParams({ node: r.key }) }))} />
-      <RelatedBlock title="Related tests" items={d.related_tests.map((t) => ({ key: t, label: t, onClick: () => nav.openSource({ path: t }) }))} />
-      {d.unresolved_references.length > 0 && <RelatedBlock title="Unresolved same-name references" hint="Not proven to target this node" items={d.unresolved_references.map((r) => ({ key: r.key + r.evidence_id, label: r.label, sub: r.path ?? "", resolution: "unresolved", ev: r.evidence_id }))} />}
-      <ul className="space-y-1 border-t border-line pt-2 text-[11.5px] text-fg-3">{d.limitations.map((n) => <li key={n}>{n}</li>)}</ul>
-    </div>
-  );
-}
-
-function Stat({ n, label }: { n: number; label: string }) {
-  return (
-    <div className="rounded-md border border-line bg-panel-2 py-1.5">
-      <div className="font-mono text-[16px] font-semibold">{n}</div>
-      <div className="text-[10.5px] text-fg-3 uppercase">{label}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------- execution flows
-function Flows({ snapshot: s }: { snapshot: Snapshot }) {
-  const nav = useNav();
-  const eps = useAsync(() => api.entryPoints(s.id), [s.id]);
-  const entryKey = nav.param("entry");
-  const ep: EntryPoint | null = useMemo(() => {
-    if (!entryKey) return null;
-    return eps.data?.find((e) => e.start_key === entryKey) ?? { kind: "symbol", label: entryKey.split("#").pop() ?? entryKey, start_key: entryKey, evidence_id: null, traceable: true };
-  }, [eps.data, entryKey]);
-  const flow = useAsync(() => (ep?.start_key ? api.trace(s.id, ep.start_key, ep.line_range) : Promise.resolve(null)), [s.id, ep?.start_key, ep?.line_range?.[0] ?? null]);
-  const [mode, setMode] = useState<"steps" | "graph">("steps");
-  const graph = useMemo(() => {
-    if (!flow.data) return null;
-    const nodes = new Map<string, ViewNode>();
-    nodes.set(flow.data.start.key, { ...flow.data.start, focus: true });
-    const edges: ViewEdge[] = [];
-    for (const st of flow.data.steps) {
-      nodes.set(st.to.key, { ...st.to });
-      edges.push({ source: st.from, target: st.to.key, kind: st.edge_kind, resolution: st.resolution, count: 1, evidence_id: st.evidence_id });
-    }
-    return { nodes: [...nodes.values()], edges };
-  }, [flow.data]);
-
-  return (
-    <div className="flex min-h-0 flex-1">
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-panel">
-        <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-line px-3 text-[11.5px] font-semibold tracking-wide text-fg-2 uppercase"><Route className="h-3.5 w-3.5" /> Entry points</div>
-        <ul className="min-h-0 flex-1 overflow-auto py-1">
-          {!eps.data && <li className="p-3"><SkeletonRows rows={5} /></li>}
-          {eps.data?.length === 0 && <li className="px-3 py-2 text-[12px] text-fg-3">No traceable entry points detected.</li>}
-          {(eps.data ?? []).map((e) => (
-            <li key={`${e.kind}:${e.label}`}>
-              <button
-                disabled={!e.traceable}
-                onClick={() => e.start_key && nav.setParams({ entry: e.start_key })}
-                className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] disabled:opacity-40", entryKey === e.start_key ? "bg-accent-soft text-accent" : "hover:bg-panel-3")}
-              >
-                <Badge tone={e.kind === "route" ? "accent" : "neutral"}>{e.kind === "route" ? e.framework ?? "route" : e.kind.replace("_", " ")}</Badge>
-                <span className="min-w-0 truncate font-mono text-[12px]">{e.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        {!ep ? (
-          <EmptyState icon={<Workflow className="h-6 w-6" />} title="Choose an entry point">Traces follow statically resolved call sites, in source order, from a route handler, main function or CLI entry.</EmptyState>
-        ) : (
-          <>
-            <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel px-3 py-1.5">
-              <span className="truncate font-mono text-[12.5px]">{ep.label}</span>
-              {ep.evidence_id && <EvidenceChip id={ep.evidence_id} />}
-              <div className="ml-auto flex items-center gap-2">
-                {flow.data && (
-                  <span className="text-[11.5px] text-fg-3">
-                    {flow.data.steps.length} steps · {Object.entries(flow.data.stats).filter(([, v]) => v).map(([k, v]) => `${v} ${k}`).join(" · ")}
-                    {flow.data.truncated ? " · truncated" : ""}
-                  </span>
-                )}
-                <Segmented label="Flow display" value={mode} onChange={setMode} options={[{ id: "steps", label: "Steps" }, { id: "graph", label: "Graph" }]} />
-              </div>
-            </div>
-            {flow.data && <div className="shrink-0 border-b border-line bg-info-soft/30 px-3 py-1.5 text-[11.5px] text-fg-2">{flow.data.semantics}</div>}
-            <div className="min-h-0 flex-1 overflow-auto">
-              {flow.error ? <div className="p-3"><ErrorState error={flow.error} onRetry={flow.reload} /></div> : null}
-              {!flow.data && !flow.error && <div className="p-4"><Spinner label="Tracing" /></div>}
-              {flow.data && mode === "steps" && <StepTree steps={flow.data.steps} />}
-              {flow.data && mode === "graph" && graph && <div className="h-full"><GraphCanvas nodes={graph.nodes} edges={graph.edges} selected={null} onSelect={(k) => k && nav.setParams({ gview: "focus", focus: k, node: k })} fitKey={ep.start_key ?? ""} /></div>}
-              {flow.data && flow.data.steps.length === 0 && <EmptyState title="No outgoing calls were resolved from this entry point" />}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StepTree({ steps }: { steps: FlowStep[] }) {
-  const nav = useNav();
-  return (
-    <ol className="py-1" aria-label="Flow steps">
-      {steps.map((st) => (
-        <li key={st.index} className="flex items-center gap-2 border-b border-line/50 py-1 pr-3 text-[12.5px] hover:bg-panel-2" style={{ paddingLeft: 12 + st.depth * 18 }}>
-          <span className="w-6 shrink-0 text-right font-mono text-[11px] text-fg-3">{st.index + 1}</span>
-          <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: KIND_VAR[st.to.kind] ?? "var(--fg-3)" }} aria-hidden />
-          <button className="min-w-0 truncate text-left font-mono text-[12px] hover:text-accent" onClick={() => st.to.path ? nav.openSource({ path: st.to.path, start: st.to.start_line, end: st.to.end_line }) : undefined} title={st.to.key}>
-            {st.to.label}
-          </button>
-          <span className="shrink-0 text-[11px] text-fg-3">{st.edge_kind === "handled_by" ? "handled by" : "calls"}{st.call_line ? ` @${st.call_line}` : ""}</span>
-          <ResolutionBadge resolution={st.resolution} via={st.via} />
-          {st.certainty === "possible" && <Badge title="Static possible path, not observed runtime order">possible</Badge>}
-          {st.cycle && <Badge tone="warn">cycle</Badge>}
-          {st.leaf_reason && st.leaf_reason !== "cycle" && <Badge tone={st.leaf_reason === "depth_limit" ? "warn" : "neutral"}>{st.leaf_reason.replace("_", " ")}</Badge>}
-          <span className="ml-auto shrink-0">{st.evidence_id && <EvidenceChip id={st.evidence_id} />}</span>
-        </li>
-      ))}
-    </ol>
   );
 }

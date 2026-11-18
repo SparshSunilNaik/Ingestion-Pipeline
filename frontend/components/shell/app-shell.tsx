@@ -18,7 +18,7 @@ import {
   Sun,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api, setUnauthorizedHandler } from "@/lib/api";
 import { useAsync, useHotkey, usePref } from "@/lib/hooks";
@@ -34,10 +34,18 @@ const NAV = [
 ];
 
 export const SHORTCUTS: [string, string][] = [
-  ["Ctrl K", "Command palette / search"],
-  ["Ctrl B", "Toggle sidebar"],
-  ["Alt 1–6", "Workspace: Overview, Code, Architecture, Investigate, Report, Compare"],
-  ["/", "Focus the file filter (Code view)"],
+  ["Ctrl K", "Command palette: jump to files, symbols, repositories"],
+  ["/", "Search this repository (workspace explorer)"],
+  ["Ctrl B", "Toggle the repository explorer (sidebar outside the workspace)"],
+  ["Ctrl I", "Toggle the investigation assistant"],
+  ["Ctrl F", "Find in the open file"],
+  ["Alt 1", "Overview"],
+  ["Alt 2", "Last open file"],
+  ["Alt 3", "Architecture graph"],
+  ["Alt 4", "Open the assistant"],
+  ["Alt 5", "Technical report"],
+  ["Alt 6", "Compare snapshots"],
+  ["Alt W", "Close the current tab"],
   ["?", "Show keyboard shortcuts"],
   ["Esc", "Close dialogs"],
 ];
@@ -45,7 +53,6 @@ export const SHORTCUTS: [string, string][] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const search = useSearchParams();
   const [collapsed, setCollapsed] = usePref("ip.sidebar", "open");
   const [theme, setTheme] = usePref("ip.theme", "dark");
   const [lastSnapshot] = usePref("ip.lastSnapshot", "");
@@ -73,7 +80,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [unauthenticated, toLogin]);
 
   useHotkey("mod+k", () => setPalette((v) => !v), { allowInInputs: true });
-  useHotkey("mod+b", () => setCollapsed(collapsed === "open" ? "closed" : "open"), { allowInInputs: true });
+  const inWorkspace = pathname.startsWith("/snapshots/");
+  // Inside the workspace Ctrl+B toggles the repository explorer instead (handled there).
+  useHotkey("mod+b", () => !window.location.pathname.startsWith("/snapshots/") && setCollapsed(collapsed === "open" ? "closed" : "open"), { allowInInputs: true });
   useHotkey("?", () => setHelp((v) => !v));
   useHotkey("escape", () => {
     setPalette(false);
@@ -81,7 +90,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, { allowInInputs: true });
 
   if (isLogin) return <>{children}</>;
-  const open = collapsed === "open";
+  // The workspace has its own explorer; the app navigation shrinks to an icon rail there.
+  const open = collapsed === "open" && !inWorkspace;
   const snapshotMatch = pathname.match(/^\/snapshots\/(\d+)/);
   const activeSnapshot = snapshotMatch ? Number(snapshotMatch[1]) : lastSnapshot ? Number(lastSnapshot) : null;
 
@@ -118,9 +128,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         {open && activeSnapshot ? <ActiveRepository snapshotId={activeSnapshot} /> : null}
         <div className="mt-auto flex flex-col gap-1 border-t border-line p-2">
           <div className={cn("flex items-center", open ? "justify-between" : "flex-col gap-1")}>
-            <IconButton label={open ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"} onClick={() => setCollapsed(open ? "closed" : "open")}>
-              {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            </IconButton>
+            {!inWorkspace && (
+              <IconButton label={open ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"} onClick={() => setCollapsed(open ? "closed" : "open")}>
+                {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              </IconButton>
+            )}
             <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
               {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </IconButton>
@@ -137,7 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar snapshotId={snapshotMatch ? Number(snapshotMatch[1]) : null} view={search.get("view")} onSearch={() => setPalette(true)} />
+        <TopBar snapshotId={snapshotMatch ? Number(snapshotMatch[1]) : null} onSearch={() => setPalette(true)} />
         <main className="min-h-0 flex-1 overflow-auto">{auth.data?.authenticated === false ? null : children}</main>
       </div>
       {palette && <CommandPalette snapshotId={activeSnapshot} onClose={() => setPalette(false)} />}
@@ -164,8 +176,11 @@ function ActiveRepository({ snapshotId }: { snapshotId: number }) {
   );
 }
 
-function TopBar({ snapshotId, view, onSearch }: { snapshotId: number | null; view: string | null; onSearch: () => void }) {
+function TopBar({ snapshotId, onSearch }: { snapshotId: number | null; onSearch: () => void }) {
+  const router = useRouter();
   const snap = useAsync(() => (snapshotId ? api.snapshot(snapshotId) : Promise.resolve(null)), [snapshotId]);
+  const repos = useAsync(() => (snapshotId ? api.repositories().catch(() => []) : Promise.resolve([])), [snapshotId]);
+  const siblings = (repos.data ?? []).find((r) => r.id === snap.data?.repository.id)?.snapshots.filter((x) => x.status === "ready") ?? [];
   const agent = useAsync(() => api.agentStatus().catch(() => null), [], 60_000);
   const s = snap.data;
   const a = agent.data;
@@ -181,11 +196,26 @@ function TopBar({ snapshotId, view, onSearch }: { snapshotId: number | null; vie
               <GitBranch className="h-3.5 w-3.5" aria-hidden />
               {s.default_branch ?? "unknown"}
             </span>
-            <ShortSha sha={s.commit_sha} />
-            <Badge tone={jobTone(s.status)}>{s.status}</Badge>
-            {s.coverage.is_partial && <Badge tone="warn">partial coverage</Badge>}
-            <span className="hidden text-[11.5px] text-fg-3 xl:inline">analyzer {s.analyzer_version}</span>
-            {view && <span className="hidden text-[12px] text-fg-3 lg:inline">· {view}</span>}
+            {siblings.length > 1 ? (
+              <select
+                value={s.id}
+                onChange={(e) => router.push(`/snapshots/${e.target.value}`)}
+                aria-label="Switch snapshot"
+                title="Each snapshot is one analysed commit (and analyzer version)"
+                className="h-6 max-w-[260px] rounded border border-line bg-panel-2 px-1 font-mono text-[11.5px] text-fg-2"
+              >
+                {siblings.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.commit_sha.slice(0, 10)} · analyzer {x.analyzer_version}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <ShortSha sha={s.commit_sha} />
+            )}
+            {s.status !== "ready" && <Badge tone={jobTone(s.status)}>{s.status}</Badge>}
+            {s.coverage.is_partial && <Badge tone="warn" title="Some eligible files were skipped by the analysis limits">partial coverage</Badge>}
+            {siblings.length <= 1 && <span className="hidden text-[11.5px] text-fg-3 xl:inline">analyzer {s.analyzer_version}</span>}
           </>
         ) : (
           <span className="flex items-center gap-2 text-[13px] text-fg-2">
@@ -196,7 +226,7 @@ function TopBar({ snapshotId, view, onSearch }: { snapshotId: number | null; vie
       <button
         onClick={onSearch}
         className="hidden h-7 w-64 shrink-0 items-center gap-2 rounded-md border border-line bg-panel-2 px-2 text-[12px] whitespace-nowrap text-fg-3 hover:border-line-strong md:flex"
-        aria-label="Open command palette"
+        title="Command palette (Ctrl K)"
       >
         <Search className="h-3.5 w-3.5" aria-hidden />
         <span className="min-w-0 flex-1 truncate text-left">Search symbols, files, repos…</span>

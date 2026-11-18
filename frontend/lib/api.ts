@@ -236,6 +236,8 @@ export interface Usage {
   definition: NodeInfo & { evidence_id: string | null };
   direct_references: Related[];
   importing_files: Related[];
+  /** Files only: outgoing import / dependency edges. */
+  imports?: Related[];
   direct_callees: Related[];
   related_routes: Related[];
   upstream_transitive: Related[];

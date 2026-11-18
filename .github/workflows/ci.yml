@@ -61,6 +61,8 @@ jobs:
         run: |
           npx next typegen
           npx tsc --noEmit
+      - name: Component and accessibility tests (Vitest + axe)
+        run: npm test
       - name: Production build
         run: npm run build
 

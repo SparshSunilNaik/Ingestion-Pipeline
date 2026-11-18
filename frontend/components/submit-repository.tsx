@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { Button, ErrorState, cn } from "@/components/ui";
 
 /** Repository submission with live URL validation; navigates to the job progress page. */
-export function SubmitRepository({ compact }: { compact?: boolean }) {
+export function SubmitRepository({ compact, autoFocus }: { compact?: boolean; autoFocus?: boolean }) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [checked, setChecked] = useState<{ url: string; valid: boolean; canonical_url: string | null; error: string | null } | null>(null);
@@ -15,6 +15,13 @@ export function SubmitRepository({ compact }: { compact?: boolean }) {
   const [error, setError] = useState<unknown>(null);
   const value = url.trim();
   const check = checked && checked.url === value ? checked : null;
+
+  // "Try this example" links fill the field.
+  useEffect(() => {
+    const fill = (e: Event) => setUrl((e as CustomEvent<string>).detail);
+    window.addEventListener("ip:fill-url", fill);
+    return () => window.removeEventListener("ip:fill-url", fill);
+  }, []);
 
   useEffect(() => {
     if (!value) return;
@@ -48,6 +55,7 @@ export function SubmitRepository({ compact }: { compact?: boolean }) {
           <GitBranch className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-fg-3" aria-hidden />
           <input
             aria-label="GitHub repository URL"
+            autoFocus={autoFocus}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://github.com/owner/repository"
@@ -60,7 +68,7 @@ export function SubmitRepository({ compact }: { compact?: boolean }) {
           />
         </div>
         <Button type="submit" variant="primary" className="h-9" disabled={!check?.valid || busy}>
-          {busy ? "Starting…" : "Analyze"} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          {busy ? "Starting…" : "Analyse"} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </Button>
       </div>
       <div className="min-h-[18px] text-[12px]" aria-live="polite">
