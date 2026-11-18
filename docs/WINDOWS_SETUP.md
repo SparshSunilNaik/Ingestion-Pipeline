@@ -54,3 +54,15 @@ own private server on port 47900 by default; change with `IP_OPENCODE_PORT`, or 
 
 `backend/data/` (git-ignored): `ingestion.db` (SQLite WAL), `snapshots/`, `staging/`,
 `git-sandbox/` (empty git config/hooks/template), `opencode-sandbox/`.
+
+## M5 notes
+
+- **API token**: created on first backend start at `backend\data\api-token` with a user-only ACL. Paste it
+  into the login page once. `scripts\health.ps1` reads it locally to call protected endpoints and never
+  prints it. Set `IP_API_TOKEN` to choose your own.
+- **Worker** (`IP_WORKER_MODE`): `subprocess` (default; the API starts and supervises
+  `python -m app.worker_main`), `external` (run `scripts\start-worker.ps1` yourself), `inprocess` (thread,
+  tests), `none`.
+- **Playwright**: `$env:PW_CHANNEL="msedge"; npx playwright test` uses the installed Edge. If `uv` is not on
+  `PATH`, also set `$env:IP_UV_CMD="python -m uv"`.
+- No WSL, Docker or administrator rights are required; Job Objects are created per user without elevation.

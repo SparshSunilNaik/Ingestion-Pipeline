@@ -1,74 +1,64 @@
 # Ingestion-Pipeline
 
-Evidence-grounded repository intelligence. Paste a public GitHub repository URL; the
-system acquires it safely, analyses its source statically, builds a graph of files,
-symbols, imports, calls and routes, and produces a report in which **every statement
-cites verifiable evidence** (file + exact line range at an exact commit). An optional
-AI agent (through [OpenCode](https://opencode.ai)) writes a narrative on top of that
-evidence; its claims are validated and downgraded when unsupported.
+Evidence-grounded repository intelligence workbench. Paste a public GitHub repository URL; the system
+acquires it safely, analyses it statically (Python, TypeScript/JavaScript, Go, Java), builds a resolved
+graph of files, symbols, calls, inheritance and routes, traces possible execution flows, answers
+questions through a tool-less AI agent, and shows **every statement with verifiable evidence**
+(exact file and line range at an exact commit).
 
-> Status: first functional release (milestones M0–M2 plus an initial agent workflow).
-> Not production-ready. See [Known limitations](#known-limitations) and
-> [docs/ROADMAP.md](docs/ROADMAP.md).
+> Status: M0–M5 functional release. Not production-ready; designed for a single developer machine.
+> See [Known limitations](#known-limitations) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## What works today
+![Overview](docs/screenshots/overview.png)
 
-| Area | Implemented |
+## Capabilities
+
+| Area | What it does |
 |---|---|
-| Ingestion | Strict GitHub URL validation; hardened shallow `git clone` (no hooks, no credential prompts, no LFS smudge, no submodules, protocol allow-list, timeouts); exact commit SHA; atomic snapshot promotion; per-commit cache; failed refreshes never touch the last valid snapshot |
-| Inventory | Classification (source/test/docs/config/manifest/CI/container/binary/generated/vendored/symlink/submodule/unsafe path), language detection, configurable limits, explicit partial-coverage reporting |
-| Static analysis | Python (stdlib `ast`), TypeScript/JavaScript (Tree-sitter): functions, classes, methods, interfaces, imports/exports, calls, inheritance; routes for FastAPI, Flask, Django, Express, Next.js; entry points; manifests (`package.json`, `pyproject.toml`, `requirements*.txt`) |
-| Graph | NetworkX graph persisted in SQLite; every edge has a type, resolution status (`resolved`/`ambiguous`/`external`/`unresolved`) and evidence; impact ("what depends on this?") analysis |
-| Evidence | Versioned contract, stable IDs, verifier that rejects fabricated paths/line ranges and stale excerpts |
-| Reports | Deterministic report (overview, installation/usage, architecture, code structure, engineering assessment, evidence table) as JSON and Markdown; agent narrative with validated citations |
-| Agent | OpenCode v2 adapter (stateless, tool-less generation); backend-enforced read-only evidence gateway; bounded investigation loop; structured output validated with Pydantic |
-| Frontend | Dashboard, repository submission, job progress, workspace (overview, files, architecture graph + Mermaid diagram, report, evidence source viewer), agent settings |
-| Ops | PowerShell scripts for setup/start/test/health; GitHub Actions CI (Linux + Windows) |
+| Ingestion | Strict GitHub URL validation; hardened shallow clone in a Windows Job Object (memory/process limits, kill-on-close); exact commit SHA; atomic snapshots; per-commit cache; incremental re-analysis reusing unchanged files' parse results |
+| Analysis | Python (`ast`), TypeScript/JavaScript, Go, Java (Tree-sitter): symbols, imports/re-exports, calls, inheritance with method lookup, override-aware dispatch, declared/constructed local types; FastAPI, Flask, Django, Express, Next.js, Gin/net-http, Spring routes; pip, npm, Go modules, Maven/Gradle manifests |
+| Intelligence | Bounded execution-flow tracing; "where is this used?" (direct vs transitive); potential change impact (routes, tests, unresolved references); hybrid deterministic retrieval; snapshot comparison |
+| Evidence | Versioned contract (1.1), stable IDs, verification against disk, claim basis computed by the backend |
+| AI | OpenCode stateless generation without tools; backend read-only evidence gateway; multi-turn Q&A pinned to one commit; validated reports |
+| UI | Dark-first workbench: dashboard, repositories, recent analyses, workspace (Overview, Code, Architecture, Investigate, Report, Compare), Ctrl+K palette, persisted layouts |
+| Ops | Separate worker process with timeouts/cancellation/recovery; local token auth with HttpOnly sessions; PowerShell scripts; CI on Linux + Windows incl. Playwright |
 
 ## Quick start (Windows 11, PowerShell)
 
-Prerequisites: Python 3.12+, Node.js 20.9+, Git. OpenCode is optional (agent reports only).
+Prerequisites: Python 3.12+, Node.js 20.9+, Git. OpenCode is optional (AI features only).
 
 ```powershell
 .\scripts\setup.ps1           # installs uv if needed, syncs backend, npm ci
-.\scripts\start-backend.ps1   # API + worker on http://127.0.0.1:8000 (OpenAPI at /docs)
+.\scripts\start-backend.ps1   # API on http://127.0.0.1:8000 + worker process + private OpenCode
 .\scripts\start-frontend.ps1  # UI on http://localhost:3000
-.\scripts\health.ps1          # checks backend, worker, OpenCode, frontend
-.\scripts\test.ps1            # lint, type checks, tests, frontend build
 ```
 
-See [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) for details, including the Smart App
-Control workaround this repository already applies.
+On first start the backend writes an API token to `backend\data\api-token` (readable only by your Windows
+user). Open http://localhost:3000, paste it once; the browser then uses an HttpOnly session cookie.
 
-## Repository layout
-
-```
-backend/   FastAPI app (app/: api, core, database, ingestion, analysis, graph,
-           evidence, search, agents, reports, schemas), Alembic, tests
-frontend/  Next.js 16 App Router + TypeScript + Tailwind + React Flow + Mermaid
-docs/      Architecture decisions, security, evidence contract, OpenCode, testing
-scripts/   PowerShell helpers
-tests/fixtures/sample_repo/  Synthetic repository used by the offline test-suite
+```powershell
+.\scripts\health.ps1          # backend, worker, auth, OpenCode, frontend
+.\scripts\test.ps1            # lint, types, tests, build   (-E2E for Playwright, -Bench, -Live)
 ```
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — components and data flow
-- [docs/SECURITY.md](docs/SECURITY.md) — threat model, controls, residual risks
+- [ARCHITECTURE.md](ARCHITECTURE.md) — components, data flow, worker model
+- [docs/SECURITY.md](docs/SECURITY.md) — threat model, auth, isolation, residual risks
 - [docs/EVIDENCE_CONTRACT.md](docs/EVIDENCE_CONTRACT.md) — evidence and claim semantics
-- [docs/OPENCODE_INTEGRATION.md](docs/OPENCODE_INTEGRATION.md) — runtime, model, API surface
-- [docs/TESTING.md](docs/TESTING.md) — test strategy and recorded acceptance run
+- [docs/OPENCODE_INTEGRATION.md](docs/OPENCODE_INTEGRATION.md) — runtime, model, Q&A protocol
+- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — ground-truth benchmark and real-repo regression
+- [docs/TESTING.md](docs/TESTING.md) — test strategy and latest results
 - [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) — environment setup
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decision log
-- [docs/ROADMAP.md](docs/ROADMAP.md) — milestones and what is not built yet
+- [docs/ROADMAP.md](docs/ROADMAP.md) — what is done and what is not
+- [docs/screenshots/](docs/screenshots/) — UI screenshots captured from a real instance
 
 ## Known limitations
 
-- Only Python, TypeScript and JavaScript are parsed; other languages are inventoried only.
-- Call resolution is name-based (same file, imports, `self`/`this` methods). Dynamic
-  dispatch, inheritance-based method lookup, decorators' runtime effects and reflection
-  are not modelled; such call sites are counted, not guessed.
-- "Declared but not observed" dependencies are **not** claimed to be unused.
-- Agent narratives cite verified locations, but the semantic accuracy of a sentence is
-  not machine-verified; only its evidence is.
-- Single-process worker; SQLite. Designed for one machine.
+- Call resolution is static: return types of calls, generics, reflection, decorators' runtime effects and
+  runtime wiring are not modelled; such call sites are counted, not guessed. Flow steps are *possible* paths.
+- Impact is static reachability ("potentially affected"), not proof of breakage.
+- AI answers cite verified locations; the semantic accuracy of a sentence is not machine-verified.
+- Child-process isolation enforces resource limits, not a security sandbox (see SECURITY.md).
+- Single machine: SQLite, local token auth, localhost-only binding.

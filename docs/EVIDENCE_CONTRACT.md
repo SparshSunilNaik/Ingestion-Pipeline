@@ -1,4 +1,4 @@
-# Evidence contract (v1.0)
+# Evidence contract (v1.1)
 
 Source: `backend/app/evidence/contract.py`, `collector.py`, `verifier.py`;
 reports: `backend/app/reports/schema.py`.
@@ -7,7 +7,7 @@ reports: `backend/app/reports/schema.py`.
 
 | Field | Meaning |
 |---|---|
-| `id` | `ev_` + first 24 hex of SHA-256 over (contract version, commit SHA, path, start, end, category, method, subject). Stable: same extraction on the same commit → same ID. |
+| `id` | `ev_` + first 24 hex of SHA-256 over (contract version, **analyzer version**, commit SHA, path, start, end, category, method, subject). Stable: the same extraction on the same commit by the same analyzer → same ID. v1.1 added the analyzer version so two analyses of one commit never collide; IDs stored under v1.0 remain valid for their snapshots. |
 | `repository_id`, `snapshot_id`, `commit_sha` | The exact immutable snapshot the location refers to |
 | `path` | Repository-relative POSIX path of an **analysed** file |
 | `start_line`, `end_line` | 1-based inclusive range, clamped to the file at creation |
@@ -48,3 +48,10 @@ fail are removed from the claim, and the report records `evidence_summary` count
 "Source evidence" means the claim points at real code; it does not prove the sentence is a
 correct interpretation of that code. The UI makes every citation one click away from the
 highlighted source range so a reader can check.
+
+## Q&A answers
+
+Each assistant answer carries `claims` validated exactly like report claims (basis computed by the backend),
+plus a `grounding` summary: `grounded` (every claim has valid evidence), `partially_grounded`, `unsupported`,
+or `insufficient_evidence` (the model said it could not answer). Evidence IDs from any other snapshot or
+repository never validate, because validation is scoped to the conversation's snapshot.

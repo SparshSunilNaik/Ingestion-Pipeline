@@ -91,3 +91,19 @@ that run; the request path is covered by mocked integration tests.
 1. `opencode --version`; fetch `/openapi.json` and confirm the six endpoints and schemas.
 2. Re-run the canary probe (ask the generate endpoint to read a file in its cwd).
 3. Run `.\scripts\test.ps1 -Live`.
+
+## Q&A protocol (M4)
+
+`agents/qa.py` runs per question: intent detection → hybrid retrieval → focus symbols (every explicitly
+named symbol, then the top hit) → usage/impact/flow facts with evidence IDs → bounded excerpts → generate.
+The model answers with the same JSON protocol as reports (`request` actions executed by the read-only
+gateway, at most 3 rounds, or a final `answer` with claims). Prior turns are summarised into the prompt.
+Claims are validated against the conversation's snapshot and each answer records a grounding status.
+
+The model is whatever is configured (recorded with each run). If it is unavailable the job fails with a
+clear error; the backend never switches models.
+
+### Recorded live Q&A (2026-11-18, `openai/gpt-5.6-terra`)
+- pallets/itsdangerous snapshot 2: turn 1 grounded (8/8 source claims, 3 rounds, 13 gateway requests);
+  the follow-up was grounded (7/7) and used the previous turn as context.
+- Benchmark `--live`: 2 questions, 9/9 claims cite valid evidence.

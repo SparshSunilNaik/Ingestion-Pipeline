@@ -14,3 +14,10 @@
 | 10 | Report "not observed" instead of "unused" for dependencies | Static import scanning cannot prove absence of use | — |
 | 11 | Frontend pages are server shells around client views in `<Suspense>` | Required by Next.js 16 Cache Components for `useParams`/`useSearchParams` | Disabling Cache Components |
 | 12 | Next.js routes are confirmed only when `next` is a declared dependency | Avoid inferring behaviour from filenames alone | Path-only detection |
+| 13 | Worker runs as a separate process supervised by the API, each job in its own spawned child | A crashing or hung job cannot take down the API; timeouts and cancellation can kill reliably | Threads (no forced kill); Celery (infrastructure) |
+| 14 | Local token + HttpOnly session cookie, CSRF header, same-origin `/api` proxy | Protects the API from other local origins and DNS rebinding without user accounts | OAuth (overkill locally); no auth (M2) |
+| 15 | Windows Job Objects for git/OpenCode/worker, documented as resource limits, not a sandbox | Works without admin rights, WSL or Docker; honest about what it enforces | AppContainer (more setup); Docker (not allowed as a requirement) |
+| 16 | Evidence contract 1.1 adds the analyzer version to IDs; snapshot uniqueness includes analyzer version | Re-analysing a commit with a newer analyzer must not overwrite or collide with old evidence | Overwriting snapshots in place |
+| 17 | Ambiguous dispatch produces edges to every override, marked `ambiguous` | Shows possible targets without claiming one | Picking the base method only |
+| 18 | Hybrid retrieval is deterministic and explainable (scored signals), no embeddings | No paid services or model downloads; results can be explained in the UI | Vector search |
+| 19 | Q&A focus covers every explicitly named symbol; impact depth 5 | Live runs showed answers missing a route four hops away when only the top hit was analysed | Top hit only |

@@ -40,3 +40,23 @@ model provider.
   (20 claims, 71/71 citations verified, 0 unsupported)
 - UI verified in a browser: dashboard, workspace tabs, graph inspection and impact
   analysis, and evidence links opening the exact highlighted source range
+
+## M3–M5 test suite
+
+| Suite | Count | Adds |
+|---|---|---|
+| `unit/` | 109 | Go/Java analyzers, go.mod/pom/Gradle parsing (no entity expansion) |
+| `security/` | 19 | auth on protected endpoints, session cookie flags, CSRF, login rate limit, request-size limit, trusted hosts, token-file ACL, Job Object membership/memory/process limits/kill-on-close |
+| `integration/` | 41 | benchmark thresholds, flows, usage/impact, retrieval, incremental == full rebuild, analyzer upgrade preserves the old snapshot, multi-turn Q&A, foreign-evidence rejection, worker process (exclusive claiming across two workers, timeout, crash, cancel, shutdown requeue), migration 0001→0002 with data, API v2 |
+| `live/` | 2 | opt-in, unchanged |
+| `frontend/e2e` (Playwright) | 15 | login (wrong token rejected), sidebar collapse persistence and command palette, dashboard from real data, URL validation and failed-job state, Overview citations opening exact source lines, Code explorer (tree filter, outline, references), Architecture graph/inspector/focus/execution flow, Report (TOC, exports), Compare of two analysed commits, agent-unavailable state, model selection with a mocked agent API, unknown-snapshot error, no horizontal overflow at 1920/1366/1024 px |
+
+Run the e2e suite locally with Edge (no browser download needed):
+
+```powershell
+cd frontend
+$env:PW_CHANNEL="msedge"; npx playwright test
+```
+
+The harness starts an isolated backend (port 8765, `IP_ENVIRONMENT=test`, its own data directory,
+a fixed test-only token) and a production build of the frontend (port 3100).

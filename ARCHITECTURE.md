@@ -85,3 +85,48 @@ Next.js 16 App Router with Cache Components enabled. Each route's `page.tsx` is 
 component that renders a client view inside `<Suspense>`; data comes from the backend at
 runtime via `lib/api.ts`. The architecture tab renders a React Flow graph (dagre layout)
 of the persisted graph and a Mermaid diagram generated from resolved import edges.
+
+## M3–M5 additions
+
+```
+Browser ──► Next.js (localhost:3000) ──/api/* proxy──► FastAPI (127.0.0.1:8000)
+                                                     │  auth: bearer token or HttpOnly session (+ CSRF header)
+                                                     │  TrustedHost, request-size limit
+                                                     ▼
+                         API process ──spawns (Job Object, kill-on-close)──► worker_main (supervisor)
+                             │  owns managed OpenCode (Job Object)              │ claims job atomically
+                             │  passes OpenCode URL/password via child env      ▼
+                             │                                         per-job child process (spawn)
+                             ▼                                           ingest | agent_report | qa
+                        SQLite (WAL)  ◄───────────────────────────────── timeouts, forced cancel, crash → failed
+```
+
+| Module | Responsibility |
+|---|---|
+| `analysis/go_analyzer.py`, `analysis/java_analyzer.py` | Tree-sitter analyzers for Go and Java |
+| `analysis/engine.py` | Hierarchy-aware resolution (`Target` with `via`), re-exports, local types, per-file IR reuse (incremental) |
+| `graph/queries.py` | Cached per-snapshot `GraphIndex`; flow tracing, usage, impact |
+| `graph/compare.py` | Snapshot comparison |
+| `search/hybrid.py` | Deterministic hybrid retrieval with explainable signals |
+| `agents/qa.py` | Multi-turn Q&A pipeline (intent → retrieval → relationships → excerpts → generate → validate) |
+| `core/auth.py` | Token + session auth, CSRF, login rate limit |
+| `core/isolation.py` | Windows Job Objects / POSIX rlimits for child processes; user-only ACLs |
+| `worker_main.py` | Standalone worker supervisor with per-job child processes |
+| `bench.py`, `devtools.py` | Ground-truth benchmark; test-only seeding |
+
+### Resolution model (analyzer 0.2.0)
+Every call/inheritance/route edge records **how** it was resolved (`via`): `same_file`, `same_package`, `import`,
+`re-export`, `wildcard_import`, `class_member`, `inheritance`, `declared_or_constructed_type`, `package_member`,
+`static_import`; unresolved edges record why (`name_not_found`, `member_not_found`,
+`possibly_inherited_from_unresolved_base`). Calls through `self`/`this` on a method that subclasses override are
+`ambiguous` with an edge to each override (`possible_override`).
+
+### Incremental refresh
+Each snapshot stores per-file parse results (`file_analyses`) keyed by content SHA-256 and analyzer version. A new
+snapshot reuses results for unchanged files and re-parses only changed ones; cross-file resolution, the graph and all
+evidence are rebuilt for the new snapshot. A test verifies the incremental result is identical to a full rebuild.
+
+### Frontend
+`app/snapshots/[id]` hosts six views switched by `?view=` without navigation; all deep links (file, line range, node,
+flow entry, conversation) are URL state. `components/workspace/nav.tsx` provides `openSource`/`openEvidence`/
+`focusGraph`/`ask` so any citation in any view opens the exact highlighted lines in the Code view.

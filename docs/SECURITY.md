@@ -84,6 +84,39 @@ and evidence from another snapshot are rejected.
   canary probe after upgrading OpenCode.
 - Network egress of the backend is not restricted at OS level (git needs github.com).
 - Git itself parses untrusted pack data; we rely on upstream git security and fsck.
-- The API has no authentication; bind it to localhost only (the scripts do).
+- (Superseded in M5: the API now requires token/session authentication — see below. It
+  should still be bound to localhost only; the scripts do.)
 - Symlink-escape tests for `resolve_inside` are skipped on Windows hosts without the
   symlink privilege (they run in Linux CI).
+
+## M5 additions
+
+### Authentication (local-first)
+- Every endpoint except `/api/health*` and `/api/auth/*` requires authentication (verified by tests that probe
+  repositories, jobs, agent status and mutations without credentials → 401).
+- Token: 32-byte random value in `backend/data/api-token`, written once with an ACL that removes inheritance and
+  grants only the current user (`icacls`, verified by a test) or mode 0600 on POSIX. Optional `IP_API_TOKEN`.
+- Browser sessions: `POST /api/auth/login` exchanges the token for a random session secret in an
+  `HttpOnly; SameSite=Strict` cookie; only its SHA-256 is stored (`api_sessions`), with expiry (12 h default).
+- CSRF: cookie-authenticated non-GET requests must send `X-IP-CSRF: 1` (cross-site forms cannot set headers).
+- Login rate limit: 5 failures per minute per client → 429. Request bodies over 256 KB → 413.
+- `TrustedHostMiddleware` rejects non-local `Host` headers (DNS-rebinding defence). The frontend proxies `/api`
+  same-origin, so no cross-origin credentials are needed.
+
+### Process isolation (implemented and tested)
+- Windows: git, the managed OpenCode server and the worker process run inside **Job Objects** — started suspended,
+  assigned, then resumed (no escape window). Limits: per-process committed memory (git: 2 GB default), active
+  process count (git: 32), and **kill-on-close** so children die with their owner. Tests verify job membership,
+  limits, `MemoryError` under the memory cap, process-count enforcement and termination on close; a live check
+  confirmed the OpenCode server exits when the backend is killed.
+- POSIX: `RLIMIT_AS`/`RLIMIT_NPROC` and a new session for git children.
+- Staging directories get a user-only ACL before cloning.
+- The worker executes each job in its own child process with a per-kind timeout; forced cancellation and timeouts
+  kill the child.
+
+### Residual risks (unchanged or new)
+- Job Objects limit resources; they are **not** a sandbox. git and OpenCode keep the user's file-system and network
+  access. No AppContainer / low-integrity token is applied (investigated; not implemented).
+- The worker subprocess receives the managed OpenCode password via its environment (same user, same trust boundary).
+- The API token file is readable by the user's account and by administrators.
+- Q&A answers are validated for evidence existence, not for semantic truth.
