@@ -32,7 +32,7 @@ if (-not $BackendOnly) {
     Push-Location $FrontendDir
     try {
         Invoke-Check "eslint" { npm run lint }
-        Invoke-Check "tsc" { npx tsc --noEmit }
+        Invoke-Check "tsc" { npx next typegen; npx tsc --noEmit }
         Invoke-Check "next build" { npm run build }
     } finally { Pop-Location }
 }

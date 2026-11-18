@@ -19,7 +19,7 @@ SAMPLE_REPO = FIXTURES / "sample_repo"
 
 
 def git(cwd: Path, *args: str) -> str:
-    env_args = ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false"]
+    env_args = ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", "-c", "core.symlinks=false"]
     res = subprocess.run(["git", *env_args, *args], cwd=cwd, capture_output=True, text=True, check=True)
     return res.stdout
 
