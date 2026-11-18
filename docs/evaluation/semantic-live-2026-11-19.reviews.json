@@ -1,0 +1,33 @@
+{
+  "reviewer": null,
+  "reviews": {
+    "bench-login-flow": {
+      "verdict": null,
+      "notes": ""
+    },
+    "bench-validate-impact": {
+      "verdict": null,
+      "notes": ""
+    },
+    "bench-production-database": {
+      "verdict": null,
+      "notes": ""
+    },
+    "eval-items-request": {
+      "verdict": null,
+      "notes": ""
+    },
+    "eval-go-server": {
+      "verdict": null,
+      "notes": ""
+    },
+    "eval-stock-level": {
+      "verdict": null,
+      "notes": ""
+    },
+    "eval-catalog-auth": {
+      "verdict": null,
+      "notes": ""
+    }
+  }
+}

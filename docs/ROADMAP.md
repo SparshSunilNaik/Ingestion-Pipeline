@@ -17,9 +17,9 @@ reports, initial workspace. See git history up to `3734c9e`.
 | Workspace: Overview, Code, Architecture, Investigate, Report, Compare | done | URL-state deep links |
 | Command palette, keyboard shortcuts, persisted resizable panels | done | Ctrl+K, Alt+1..6, `?` help |
 | Loading / empty / error states | done | shared `components/ui.tsx` |
-| Browser e2e tests (Playwright) | done | 15 tests, run in CI on Linux |
-| Component unit tests (Vitest) | not done | e2e covers behaviour; no isolated component tests |
-| Accessibility audit (axe) | not done | keyboard navigation and focus rings checked manually only |
+| Browser e2e tests (Playwright) | done | superseded by the M6 suite (20 tests) |
+| Component unit tests (Vitest) | done in M6 | 40 tests |
+| Accessibility audit (axe) | done in M6 | jsdom (structure) and browser (incl. colour contrast) |
 
 ## M4 — Deep analysis
 
@@ -28,7 +28,7 @@ reports, initial workspace. See git history up to `3734c9e`.
 | Re-exports (`__init__`, `export {}`, `export *`) | done | recursion depth < 4 |
 | Inheritance, method lookup through hierarchies, `super()`, static/class methods | done | |
 | Override-aware dynamic dispatch marked ambiguous | done | `possible_override` edges |
-| Local type tracking (constructor assignment, annotations, Java/Go declarations) | partial | return types of calls, generics and Java field initializers are not inferred |
+| Local type tracking (constructor assignment, annotations, Java/Go declarations) | done in M6 (bounded) | call return types (one hop), Java field initializers and Python attribute types added; generics and chained calls are not inferred |
 | Bounded execution-flow tracing | done | depth/step caps, certainty per step |
 | Usage and change impact ("potentially affected") | done | static reachability only |
 | Hybrid retrieval (FTS5 + symbols + graph + paths) | done | no embeddings by design |
@@ -50,9 +50,31 @@ reports, initial workspace. See git history up to `3734c9e`.
 | Multi-user authorisation, remote deployment | not done | out of scope for local-first |
 | Scheduled refreshes, bare-mirror fetch | not done | refresh is on demand and re-clones shallowly |
 
+## M6 — Complete product, UX rebuild, user acceptance
+
+| Item | Status | Notes |
+|---|---|---|
+| Workspace rebuilt around explorer, tabbed canvas and persistent assistant | done | replaces six sibling views; deep links and older `?view=` links work |
+| First-run home, resume ("continue where you left off"), recent investigations | done | |
+| Analysis progress from real stages (symbols / relationships / architecture reported by the analyzer) | done | no percentage bar; cancel, retry, failure explanations; cached commits shown as skipped |
+| Source viewer: highlighting, find in file, outline, callers/callees, contextual actions | done | |
+| Symbol deep dive: usage, dependencies, change impact with dependents graph | done | |
+| Architecture: smart default view, directory drill-down, scoping, filters, focus, inspector | done | very large graphs are panned at a legible zoom rather than fitted |
+| Execution flows as their own contexts (steps and graph) | done | |
+| Assistant: contextual questions, explicit model, history, cancel, retry, uncertainty, snapshot isolation | done | |
+| Go call-return type inference; Java field initializers; Python attribute types | done | bounded one-hop; see BENCHMARKS.md |
+| Held-out evaluation fixture | done | first-run result recorded before any fix |
+| Semantic evaluation framework | done | reference self-test in CI; live run recorded; **human review pending** |
+| Vitest component tests + axe | done | 40 tests |
+| Playwright rewritten for the new UI + axe incl. contrast | done | 20 tests |
+| Retrieval: exact dotted names rank first | done | found during acceptance |
+| Additional OS isolation without admin (low integrity level / AppContainer) | investigated, not implemented | see SECURITY.md |
+| Snapshot comparison exercised on a real GitHub repository | partial | verified on real git fixtures (two commits) and in the UI; itsdangerous HEAD did not change during acceptance |
+| AI technical report regenerated in the new UI | not re-verified live in M6 | unchanged backend path, verified in M2/M5 |
+
 ## Suggested next steps
 
-1. Call-return type inference (Go `x := pkg.New()`, Python factory functions) and Java field initializers.
-2. Vitest component tests and an axe accessibility pass.
-3. Usage accounting once OpenCode exposes it for stateless generation.
-4. Investigate AppContainer launch for git/OpenCode without admin setup.
+1. Human review of the live semantic-evaluation answers (`docs/evaluation/*.review.md`), then grow the dataset.
+2. Run git under a low-integrity token with a low-integrity staging directory (no admin needed; see SECURITY.md).
+3. Generics and chained-call type inference; more held-out fixtures (Kotlin/Rust are inventoried only).
+4. Usage accounting once OpenCode exposes it for stateless generation.

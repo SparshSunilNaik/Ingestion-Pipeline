@@ -1,0 +1,505 @@
+{
+  "mode": "live",
+  "model": "openai/gpt-5.6-terra",
+  "analyzer_version": "0.3.0",
+  "commits": {
+    "bench": "341f1f84e94b8b5409dffc4dab4a705d40d6b474",
+    "eval": "f8a725214043a47e09df83b35997d5208d123d63"
+  },
+  "dataset_version": 1,
+  "configuration": {
+    "qa_max_rounds": 3,
+    "gateway_max_requests": 20,
+    "runtime": "opencode generate (tool-less)"
+  },
+  "run_at": "2026-11-18T19:22:25+00:00",
+  "results": [
+    {
+      "id": "bench-login-flow",
+      "fixture": "bench",
+      "commit_sha": "341f1f84e94b8b5409dffc4dab4a705d40d6b474",
+      "question": "What happens when a user logs in via POST /login?",
+      "answer": "POST /login is handled by login_route, which calls login(name, password) and returns its result in a {\"token\": ...} dictionary. The login function creates an account, rejects the request with ValueError(\"denied\") when the password check fails, and otherwise issues a token for the account. The resolved call flow also shows Account.create may call Account.normalize, check_password may call Account.validate, and issue_token may call sign; these are static possible paths in source order, not observed runtime order.",
+      "claims": [
+        {
+          "statement": "The POST /login route is login_route(name, password), and it returns {\"token\": login(name, password)}.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_566f69df42dc449091b750c8",
+            "ev_7277a3d570093ff8d7345eab"
+          ]
+        },
+        {
+          "statement": "login first creates an account with Account.create(name), then checks the password; if the check is false, it raises ValueError(\"denied\"), otherwise it returns issue_token(account).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_677c3b88bfd24ea22d9e9fe5"
+          ]
+        },
+        {
+          "statement": "check_password returns account.validate() and len(password) > 3, so both validation and a password length greater than three are required by this function.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_edb9a4180e3ea4a9c6e37057"
+          ]
+        },
+        {
+          "statement": "The static resolved flow includes login_route \u2192 login \u2192 Account.create \u2192 Account.normalize, login \u2192 check_password \u2192 Account.validate, and login \u2192 issue_token \u2192 sign; depth-three calls are marked depth_limit.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_26e2e33fe428fd52cdd0fe54",
+            "ev_291f7be3d6d3a0cf3e8e85d8",
+            "ev_3e9ecbe79567d9299de8c7ab",
+            "ev_7eff24c040e2f4166997e2b4"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "svc/api/app.py",
+        "svc/core/auth.py"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 4,
+        "with_valid_evidence": 4
+      },
+      "expected_fact_coverage": 1.0,
+      "facts": [
+        {
+          "fact": "The route handler login_route delegates to login()",
+          "mentioned": true
+        },
+        {
+          "fact": "login() creates the account through Account.create",
+          "mentioned": true
+        },
+        {
+          "fact": "The password is checked by check_password, which calls Account.validate",
+          "mentioned": true
+        },
+        {
+          "fact": "A token is produced by issue_token, which calls sign",
+          "mentioned": true
+        },
+        {
+          "fact": "A failed check raises ValueError ('denied')",
+          "mentioned": true
+        }
+      ],
+      "required_evidence_cited": 0.5,
+      "missing_required_evidence": [
+        "svc/core/tokens.py"
+      ],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "bench-validate-impact",
+      "fixture": "bench",
+      "commit_sha": "341f1f84e94b8b5409dffc4dab4a705d40d6b474",
+      "question": "Which code could be affected if Account.validate changes?",
+      "answer": "A change to Account.validate can directly affect check_password and Admin.promote through static call relationships. It can then potentially propagate to login/login_route and the POST /login route, as well as admin_route and the GET /admin/{name} route. These are static-reachability paths, not observed runtime behavior or guaranteed breakage.",
+      "claims": [
+        {
+          "statement": "Account.validate currently returns whether account.name is truthy; changing it changes the validation behavior used by callers.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_054c96e3d6c3502e2c99fe91"
+          ]
+        },
+        {
+          "statement": "Direct static dependents of Account.validate are check_password and Admin.promote, each identified as calling it.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_a5166c0befa118f11984cee3",
+            "ev_129426eb5f8e2f68a60433ba"
+          ]
+        },
+        {
+          "statement": "check_password invokes account.validate() before checking that the password length exceeds three characters.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_edb9a4180e3ea4a9c6e37057"
+          ]
+        },
+        {
+          "statement": "Potential downstream impact from the check_password path includes login (depth 2), login_route (depth 3), POST /login (depth 4), and tests/test_auth.py#test_login (depth 3).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_3e9ecbe79567d9299de8c7ab",
+            "ev_26e2e33fe428fd52cdd0fe54",
+            "ev_7277a3d570093ff8d7345eab",
+            "ev_4af39294cb9a298d360ee387"
+          ]
+        },
+        {
+          "statement": "Potential downstream impact from the Admin.promote path includes admin_route (depth 2) and GET /admin/{name} (depth 3).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_c6838f4687dbca9d33718baa",
+            "ev_d70ba81da6fe70442456d827"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "svc/api/app.py",
+        "svc/core/auth.py",
+        "svc/core/models.py",
+        "tests/test_auth.py"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 5,
+        "with_valid_evidence": 5
+      },
+      "expected_fact_coverage": 1.0,
+      "facts": [
+        {
+          "fact": "check_password calls Account.validate directly",
+          "mentioned": true
+        },
+        {
+          "fact": "Admin.promote calls validate",
+          "mentioned": true
+        },
+        {
+          "fact": "login depends on it transitively, so POST /login is potentially affected",
+          "mentioned": true
+        },
+        {
+          "fact": "The admin route is potentially affected through Admin.promote",
+          "mentioned": true
+        }
+      ],
+      "required_evidence_cited": 1.0,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "bench-production-database",
+      "fixture": "bench",
+      "commit_sha": "341f1f84e94b8b5409dffc4dab4a705d40d6b474",
+      "question": "Which database does this service use in production?",
+      "answer": "The available evidence does not identify any production database used by this service. It only shows a service class inheriting from a base class and returning its input through an audit method.",
+      "claims": [
+        {
+          "statement": "UserService extends BaseService and its find method calls audit(id).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_101b51642b840a98b058a80a",
+            "ev_37cc75c609bfe5c2686da51c"
+          ]
+        },
+        {
+          "statement": "BaseService.audit returns the supplied id directly, with no database interaction shown in the provided excerpt.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_e5d85dd5366529cebc58e248"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "javasvc/src/main/java/com/acme/svc/BaseService.java",
+        "javasvc/src/main/java/com/acme/svc/UserService.java"
+      ],
+      "grounding": "insufficient_evidence",
+      "citation_validity": {
+        "claims": 2,
+        "with_valid_evidence": 2
+      },
+      "expected_fact_coverage": null,
+      "facts": [],
+      "required_evidence_cited": null,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "eval-items-request",
+      "fixture": "eval",
+      "commit_sha": "f8a725214043a47e09df83b35997d5208d123d63",
+      "question": "How does GET /items/<sku> produce its response?",
+      "answer": "GET /items/<sku> is handled by get_item, which constructs an InventoryService with the repository, looks up the supplied SKU, and passes the resulting dictionary to Flask's jsonify. The lookup fetches the record from the repository and presents it before it is returned. These are possible static source-order steps, not observed runtime behavior.",
+      "claims": [
+        {
+          "statement": "The GET /items/<sku> route is handled by get_item(sku).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_96094dabef55fcfcb802ea91",
+            "ev_eb920d3c3b90078e441995df"
+          ]
+        },
+        {
+          "statement": "get_item creates a service via make_service(repo) and returns jsonify(service.lookup(sku)).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_96094dabef55fcfcb802ea91",
+            "ev_9b55b3852acce15b6d74e2b5",
+            "ev_aa1844ba5be0f34b3266e3c9"
+          ]
+        },
+        {
+          "statement": "make_service constructs and returns InventoryService(repo).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_f5aaf9cd59b85e1b384b8bb6"
+          ]
+        },
+        {
+          "statement": "InventoryService.lookup fetches the SKU record through self.repo.fetch(sku), then returns self._present(record).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_2e9833ee3e6379d7dc475ae0"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "inv/service.py",
+        "inv/web.py"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 4,
+        "with_valid_evidence": 4
+      },
+      "expected_fact_coverage": 0.8,
+      "facts": [
+        {
+          "fact": "get_item handles the route",
+          "mentioned": true
+        },
+        {
+          "fact": "It builds the service with make_service",
+          "mentioned": true
+        },
+        {
+          "fact": "InventoryService.lookup fetches the record from the repository",
+          "mentioned": true
+        },
+        {
+          "fact": "The repository is the in-memory MemoryRepo",
+          "mentioned": false
+        },
+        {
+          "fact": "The record is formatted by _present into sku/qty",
+          "mentioned": true
+        }
+      ],
+      "required_evidence_cited": 1.0,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "eval-go-server",
+      "fixture": "eval",
+      "commit_sha": "f8a725214043a47e09df83b35997d5208d123d63",
+      "question": "What does the invctl Go program expose and how is it started?",
+      "answer": "The invctl program exposes an HTTP health endpoint at /health that returns HTTP 200 OK. Its main function creates a server bound to :8080, registers the endpoint on Go's default HTTP mux, and starts the listener through srv.Run(); a returned startup/serve error is passed to log.Fatal. These are static source-level call/flow steps, not observed runtime behavior.",
+      "claims": [
+        {
+          "statement": "The program registers a /health HTTP handler, implemented by srv.Health, on the default HTTP mux.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_ab23e3dee4588e103671d80b"
+          ]
+        },
+        {
+          "statement": "The health handler responds with HTTP status 200 OK and does not show a response body being written.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_24ad643cff77cebfd5857d8b"
+          ]
+        },
+        {
+          "statement": "main constructs the server with address :8080, then calls srv.Run() and supplies any returned error to log.Fatal.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_ab23e3dee4588e103671d80b"
+          ]
+        },
+        {
+          "statement": "Server.Run logs a starting message and calls http.ListenAndServe with its configured address and a nil handler, which uses the default mux where /health was registered.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_24ad643cff77cebfd5857d8b",
+            "ev_ab23e3dee4588e103671d80b"
+          ]
+        },
+        {
+          "statement": "The Go module is example.com/invctl and declares Go 1.22.",
+          "basis": "configuration_evidence",
+          "evidence_ids": [
+            "ev_b048c4e6e00d4044ef6f7af7"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "invctl/cmd/invctl/main.go",
+        "invctl/go.mod",
+        "invctl/internal/server/server.go"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 5,
+        "with_valid_evidence": 5
+      },
+      "expected_fact_coverage": 0.75,
+      "facts": [
+        {
+          "fact": "It registers /health with http.HandleFunc",
+          "mentioned": true
+        },
+        {
+          "fact": "Server.Health writes status OK",
+          "mentioned": true
+        },
+        {
+          "fact": "server.New(\":8080\") creates the server",
+          "mentioned": false
+        },
+        {
+          "fact": "Server.Run logs and calls http.ListenAndServe",
+          "mentioned": true
+        }
+      ],
+      "required_evidence_cited": 1.0,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "eval-stock-level",
+      "fixture": "eval",
+      "commit_sha": "f8a725214043a47e09df83b35997d5208d123d63",
+      "question": "How is the stock level returned by StockController.level computed?",
+      "answer": "StockController.level handles GET /stock/{sku}, first calls clock.tick(), then returns ledger.balance(sku). The balance is computed as total(sku) minus reserved(sku); in this snapshot those private methods return 10 and 2 respectively, so the returned value is 8 for any SKU. These are static source-path facts, not observed runtime behavior.",
+      "claims": [
+        {
+          "statement": "The level method is mapped to GET /stock/{sku}; it calls clock.tick() and returns ledger.balance(sku), in that source order.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_65470add8275c06b47f99236"
+          ]
+        },
+        {
+          "statement": "StockLedger.balance computes total(sku) - reserved(sku).",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_fdb8c93e22736b7712c78ea2"
+          ]
+        },
+        {
+          "statement": "In the shown implementation, total returns 10 and reserved returns 2, making the computed balance 8 regardless of the sku argument.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_fdb8c93e22736b7712c78ea2"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "stock/src/main/java/org/stock/StockController.java",
+        "stock/src/main/java/org/stock/StockLedger.java"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 3,
+        "with_valid_evidence": 3
+      },
+      "expected_fact_coverage": 1.0,
+      "facts": [
+        {
+          "fact": "level calls clock.tick()",
+          "mentioned": true
+        },
+        {
+          "fact": "level returns ledger.balance(sku)",
+          "mentioned": true
+        },
+        {
+          "fact": "balance is total minus reserved",
+          "mentioned": true
+        }
+      ],
+      "required_evidence_cited": 1.0,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    },
+    {
+      "id": "eval-catalog-auth",
+      "fixture": "eval",
+      "commit_sha": "f8a725214043a47e09df83b35997d5208d123d63",
+      "question": "What authentication does the catalog API require?",
+      "answer": "The catalog API exposes GET /catalog without any authentication checks or authentication middleware in the available catalog source. Therefore, this route appears to require no authentication.",
+      "claims": [
+        {
+          "statement": "The Express server registers a GET /catalog handler that directly returns catalog.list() and contains no credential, token, header, session, or authorization check in that handler.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_fc6f690759fbf6b54c9cad99"
+          ]
+        },
+        {
+          "statement": "The available catalog source directory contains only catalog.ts and server.ts, and searches for \"auth\" and \"Authorization\" returned no hits.",
+          "basis": "source_evidence",
+          "evidence_ids": [
+            "ev_fc6f690759fbf6b54c9cad99"
+          ]
+        }
+      ],
+      "cited_paths": [
+        "catalog/src/server.ts"
+      ],
+      "grounding": "grounded",
+      "citation_validity": {
+        "claims": 2,
+        "with_valid_evidence": 2
+      },
+      "expected_fact_coverage": null,
+      "facts": [],
+      "required_evidence_cited": null,
+      "missing_required_evidence": [],
+      "plausible_wrong_asserted": [],
+      "unsupported_claims": 0,
+      "uncertainty_handled": true,
+      "automatic_verdict": "pass"
+    }
+  ],
+  "summary": {
+    "answers": 7,
+    "automatic_triage": {
+      "pass": 7
+    },
+    "mean_expected_fact_coverage": 0.91,
+    "plausible_wrong_asserted": 0,
+    "uncertainty_handled": 7,
+    "citation_validity": {
+      "claims": 25,
+      "with_valid_evidence": 25,
+      "note": "evidence exists and re-verifies; NOT semantic accuracy"
+    },
+    "human_review": {
+      "reviewed": 0,
+      "unreviewed": 7,
+      "correct": 0,
+      "partially_correct": 0,
+      "incorrect": 0,
+      "semantic_accuracy": null,
+      "reviewer": null
+    }
+  }
+}

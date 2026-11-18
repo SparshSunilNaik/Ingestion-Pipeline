@@ -126,7 +126,23 @@ Each snapshot stores per-file parse results (`file_analyses`) keyed by content S
 snapshot reuses results for unchanged files and re-parses only changed ones; cross-file resolution, the graph and all
 evidence are rebuilt for the new snapshot. A test verifies the incremental result is identical to a full rebuild.
 
-### Frontend
-`app/snapshots/[id]` hosts six views switched by `?view=` without navigation; all deep links (file, line range, node,
-flow entry, conversation) are URL state. `components/workspace/nav.tsx` provides `openSource`/`openEvidence`/
-`focusGraph`/`ask` so any citation in any view opens the exact highlighted lines in the Code view.
+### Frontend (M6 workspace)
+
+`app/snapshots/[id]` is one workspace with three surfaces (`react-resizable-panels`, sizes persisted):
+
+| Surface | Component | Content |
+|---|---|---|
+| Repository explorer | `components/workspace/explorer.tsx` | identity, hybrid search (`/retrieve`), file tree, symbols, entry points, saved investigations |
+| Intelligence canvas | `components/workspace/canvas.tsx` | tabs: overview, files (`file-tab.tsx`), symbols (`symbol-tab.tsx`: usage, dependencies, impact), architecture, flows (`flow-tab.tsx`), report, compare |
+| Investigation assistant | `components/workspace/assistant.tsx` | conversations of this snapshot, contextual actions for the current selection, explicit model choice |
+
+State model (`components/workspace/nav.tsx`):
+- The URL describes the **active context** (`?view=code&file=…&l=…`, `?view=symbol&key=…&section=impact`,
+  `?view=flow&entry=…`, …), so every context is a deep link; links from earlier releases are mapped.
+- Open tabs are remembered per snapshot in `localStorage`; the conversation (`c`) is separate from tab state.
+- A **selection** (file, symbol, route) is set by the active view and drives the assistant's contextual
+  actions (`components/workspace/actions.tsx` builds questions that name the exact item and location).
+- The workspace is keyed by snapshot id, so tabs, selection and assistant state never leak between snapshots.
+
+Ingestion progress (`app/jobs/[id]`) shows the backend's real stages; `SnapshotAnalyzer` reports `symbols`,
+`relationships` and `architecture` through a progress callback (which also checks for cancellation).

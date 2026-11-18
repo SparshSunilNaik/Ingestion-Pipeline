@@ -120,3 +120,26 @@ and evidence from another snapshot are rejected.
 - The worker subprocess receives the managed OpenCode password via its environment (same user, same trust boundary).
 - The API token file is readable by the user's account and by administrators.
 - Q&A answers are validated for evidence existence, not for semantic truth.
+
+## M6: additional isolation investigated (not implemented)
+
+Goal: stronger confinement of git and OpenCode **without administrator rights, WSL or Docker**.
+
+| Option | Feasible without admin? | Finding |
+|---|---|---|
+| Low integrity level token (`CreateRestrictedToken` + `SetTokenInformation(TokenIntegrityLevel)`) for git | Yes | Blocks writes to medium-integrity locations (the user profile, the repository checkout, the database). The staging directory would need a low-integrity label (`icacls … /setintegritylevel low`, allowed on objects the user owns). This is the most promising next step for git. Not implemented in M6: it needs careful handling of git's temp/home directories and Windows-only tests. |
+| AppContainer (`CreateAppContainerProfile` + `SECURITY_CAPABILITIES`) | Yes (per-user profile) | Strongest confinement, but every path git reads/writes and the network capability must be granted explicitly, and OpenCode needs the user's own configuration and provider credentials, which an AppContainer cannot reach without broad grants. Judged too intrusive for M6. |
+| Windows Sandbox / Hyper-V / containers | No (feature enablement or admin) | Out of scope by requirement. |
+| Egress filtering (Windows Firewall rules) | No (admin) | Out of scope. |
+
+Unchanged residual risk: Job Objects limit memory, process count and lifetime only. git and OpenCode keep the
+user's file-system and network access. The analysis never executes repository code and the model has no tools,
+which remain the primary controls.
+
+## M6: UI and assistant
+- Conversations are bound to one snapshot: the assistant ignores a conversation ID from another snapshot, and
+  answers are validated against the conversation's snapshot only (unchanged backend rule).
+- Contextual questions put the selected symbol's name and location into the question text; they do not grant
+  the model any additional access.
+- The API token is never shown or stored by the UI; it is exchanged once for an HttpOnly session cookie.
+

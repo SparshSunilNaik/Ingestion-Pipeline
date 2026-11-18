@@ -60,3 +60,24 @@ $env:PW_CHANNEL="msedge"; npx playwright test
 
 The harness starts an isolated backend (port 8765, `IP_ENVIRONMENT=test`, its own data directory,
 a fixed test-only token) and a production build of the frontend (port 3100).
+
+## M6 test suite
+
+| Suite | Count | Covers |
+|---|---|---|
+| backend `unit/` | 115 | adds the semantic-evaluation scorer (reference answers, negation, uncertainty, separation of human review) |
+| backend `security/` | 19 (1 skipped without symlink privilege) | unchanged |
+| backend `integration/` | 42 | adds the held-out fixture thresholds, return-type/attribute-type resolution via the benchmark, dotted-name retrieval |
+| backend `live/` | 2 (opt-in) | unchanged |
+| frontend Vitest (`frontend/test`) | 40 | explorer, source viewer, citation navigation, assistant, architecture interactions, loading/error states, authentication, snapshot comparison, deep links; axe on rendered components |
+| frontend Playwright (`frontend/e2e`) | 20 | the full workspace against a real seeded backend; axe (WCAG A/AA incl. colour contrast) on home, progress, overview, file and assistant views; keyboard (/, Ctrl+F, Ctrl+I, Delete on tabs); reduced motion; no horizontal overflow at 1920/1366/1024 |
+
+```powershell
+cd frontend
+npm test                                   # Vitest
+$env:PW_CHANNEL="msedge"; npx playwright test
+```
+
+Accessibility fixes made because of these checks: muted-text contrast raised in both themes; citation and
+search buttons' accessible names now contain their visible text; tab strips contain only tabs.
+

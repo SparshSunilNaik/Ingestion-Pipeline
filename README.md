@@ -6,7 +6,7 @@ graph of files, symbols, calls, inheritance and routes, traces possible executio
 questions through a tool-less AI agent, and shows **every statement with verifiable evidence**
 (exact file and line range at an exact commit).
 
-> Status: M0–M5 functional release. Not production-ready; designed for a single developer machine.
+> Status: M0–M6 functional release, ready for user acceptance testing. Not production-ready; designed for a single developer machine.
 > See [Known limitations](#known-limitations) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ![Overview](docs/screenshots/overview.png)
@@ -16,11 +16,11 @@ questions through a tool-less AI agent, and shows **every statement with verifia
 | Area | What it does |
 |---|---|
 | Ingestion | Strict GitHub URL validation; hardened shallow clone in a Windows Job Object (memory/process limits, kill-on-close); exact commit SHA; atomic snapshots; per-commit cache; incremental re-analysis reusing unchanged files' parse results |
-| Analysis | Python (`ast`), TypeScript/JavaScript, Go, Java (Tree-sitter): symbols, imports/re-exports, calls, inheritance with method lookup, override-aware dispatch, declared/constructed local types; FastAPI, Flask, Django, Express, Next.js, Gin/net-http, Spring routes; pip, npm, Go modules, Maven/Gradle manifests |
+| Analysis | Python (`ast`), TypeScript/JavaScript, Go, Java (Tree-sitter): symbols, imports/re-exports, calls, inheritance with method lookup, override-aware dispatch, declared/constructed/returned local types, attribute types, field initializers; FastAPI, Flask, Django, Express, Next.js, Gin/net-http, Spring routes; pip, npm, Go modules, Maven/Gradle manifests |
 | Intelligence | Bounded execution-flow tracing; "where is this used?" (direct vs transitive); potential change impact (routes, tests, unresolved references); hybrid deterministic retrieval; snapshot comparison |
 | Evidence | Versioned contract (1.1), stable IDs, verification against disk, claim basis computed by the backend |
 | AI | OpenCode stateless generation without tools; backend read-only evidence gateway; multi-turn Q&A pinned to one commit; validated reports |
-| UI | Dark-first workbench: dashboard, repositories, recent analyses, workspace (Overview, Code, Architecture, Investigate, Report, Compare), Ctrl+K palette, persisted layouts |
+| UI | One workspace: repository explorer (search, files, symbols, entry points, investigations), a tabbed canvas (overview, source, symbol usage/dependencies/impact, architecture, execution flows, report, compare) and a persistent AI assistant beside the code with contextual actions; real analysis stages; light/dark; keyboard and mouse |
 | Ops | Separate worker process with timeouts/cancellation/recovery; local token auth with HttpOnly sessions; PowerShell scripts; CI on Linux + Windows incl. Playwright |
 
 ## Quick start (Windows 11, PowerShell)
@@ -47,7 +47,8 @@ user). Open http://localhost:3000, paste it once; the browser then uses an HttpO
 - [docs/SECURITY.md](docs/SECURITY.md) — threat model, auth, isolation, residual risks
 - [docs/EVIDENCE_CONTRACT.md](docs/EVIDENCE_CONTRACT.md) — evidence and claim semantics
 - [docs/OPENCODE_INTEGRATION.md](docs/OPENCODE_INTEGRATION.md) — runtime, model, Q&A protocol
-- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — ground-truth benchmark and real-repo regression
+- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — development and held-out ground-truth benchmarks, real-repo regression
+- [docs/EVALUATION.md](docs/EVALUATION.md) — semantic-correctness evaluation (automatic triage vs human review)
 - [docs/TESTING.md](docs/TESTING.md) — test strategy and latest results
 - [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) — environment setup
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decision log
@@ -56,9 +57,10 @@ user). Open http://localhost:3000, paste it once; the browser then uses an HttpO
 
 ## Known limitations
 
-- Call resolution is static: return types of calls, generics, reflection, decorators' runtime effects and
-  runtime wiring are not modelled; such call sites are counted, not guessed. Flow steps are *possible* paths.
+- Call resolution is static: generics, chained calls, reflection, decorators' runtime effects and runtime wiring
+  are not modelled (return types are followed one hop); such call sites are counted, not guessed. Flow steps are
+  *possible* paths.
 - Impact is static reachability ("potentially affected"), not proof of breakage.
-- AI answers cite verified locations; the semantic accuracy of a sentence is not machine-verified.
+- AI answers cite verified locations; semantic accuracy is measured only by human review (docs/EVALUATION.md).
 - Child-process isolation enforces resource limits, not a security sandbox (see SECURITY.md).
 - Single machine: SQLite, local token auth, localhost-only binding.
