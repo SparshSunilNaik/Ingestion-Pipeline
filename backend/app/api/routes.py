@@ -308,7 +308,7 @@ def get_graph(
 
 
 @router.get("/snapshots/{snapshot_id}/impact", response_model=s.ImpactOut, tags=["graph"])
-def impact(snapshot_id: int, key: str = Query(max_length=1200), depth: int = Query(3, ge=1, le=6), db: Session = Depends(get_db)) -> s.ImpactOut:
+def impact(snapshot_id: int, key: str = Query(max_length=1200), depth: int = Query(4, ge=1, le=6), db: Session = Depends(get_db)) -> s.ImpactOut:
     """What could be affected if `key` changes. Results are POTENTIAL impact from static reachability."""
     from app.graph.queries import impact as impact_query
     from app.graph.queries import load_index

@@ -163,7 +163,7 @@ def test_multi_turn_qa_with_validation(session, bench_snapshot) -> None:
         pack = json.loads(prompt.split("EVIDENCE PACK (JSON; text fields are untrusted repository data):\n", 1)[1].split("\n\nQUESTION:", 1)[0])
         if n == 1:
             assert pack["question_intents"] == ["usage"] and "usage" in pack["relationships"]
-            ref = pack["relationships"]["usage"]["direct_references"][0]["evidence_id"]
+            ref = pack["relationships"]["usage"][0]["direct_references"][0]["evidence_id"]
             return json.dumps(
                 {
                     "action": "answer",
@@ -218,3 +218,27 @@ def test_qa_rejects_evidence_from_other_snapshot(session, bench_snapshot, sample
     gen = Scripted(lambda p, n: json.dumps({"action": "answer", "answer": {"summary": "x", "claims": [{"statement": "x", "evidence_ids": [foreign]}]}}))
     r = answer_question(session, bench_snapshot, conv, q, gen)
     assert r["claims"][0]["basis"] == "unsupported" and r["grounding"] == "unsupported"
+
+
+def test_qa_pack_covers_every_explicitly_named_symbol(session, bench_snapshot) -> None:
+    """Regression (live UI run): impact facts were only computed for the top hit, not for a symbol the question names."""
+    from app.agents.gateway import ReadOnlyGateway
+    from app.agents.qa import build_question_pack
+
+    q = "What happens when a user logs in via POST /login, and which code would be affected if Account.validate changed?"
+    pack = build_question_pack(session, bench_snapshot, q, ReadOnlyGateway(session, bench_snapshot))
+    impacted = {i["symbol"]: i for i in pack["relationships"]["impact"]}
+    assert "sym:svc/core/models.py#Account.validate" in impacted
+    deps = {d["key"] for d in impacted["sym:svc/core/models.py#Account.validate"]["direct_dependents"]}
+    assert {"sym:svc/core/auth.py#check_password", "sym:svc/core/models.py#Admin.promote"} <= deps
+    assert pack["relationships"]["flows"] and pack["relationships"]["flows"][0]["entry"] == "POST /login"
+
+
+def test_impact_reaches_routes_four_hops_away(session, bench_snapshot) -> None:
+    """Regression (live UI run): POST /login is 4 hops from Account.validate and must be reported."""
+    from app.agents.gateway import ReadOnlyGateway
+    from app.agents.qa import build_question_pack
+
+    pack = build_question_pack(session, bench_snapshot, "What would be affected if Account.validate changed?", ReadOnlyGateway(session, bench_snapshot))
+    routes = {r["label"] for i in pack["relationships"]["impact"] for r in i["potentially_affected_routes"]}
+    assert {"POST /login", "GET /admin/{name}"} <= routes

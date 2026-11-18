@@ -87,6 +87,26 @@ def _compact(item: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     return {k: item[k] for k in keys if item.get(k) not in (None, "", [])}
 
 
+_DOTTED = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b")
+
+
+def focus_symbols(question: str, results: list[dict[str, Any]], idx: Any, limit: int = 3) -> list[str]:
+    """Symbols the question names explicitly (dotted names like Account.validate first), then the top hit."""
+    out: list[str] = []
+    dotted = {d.lower() for d in _DOTTED.findall(question)}
+    if dotted:
+        for key in idx.nodes:
+            if key.startswith("sym:") and key.split("#", 1)[1].lower() in dotted and key not in out:
+                out.append(key)
+    for r in results:
+        if r["kind"] == "symbol" and "symbol_exact" in r.get("signals", []) and r["key"] not in out:
+            out.append(r["key"])
+    top = next((r["key"] for r in results if r["kind"] == "symbol"), None)
+    if top and top not in out:
+        out.append(top)
+    return out[:limit]
+
+
 def build_question_pack(session: Session, snapshot: Snapshot, question: str, gateway: ReadOnlyGateway) -> dict[str, Any]:
     idx = load_index(session, snapshot)
     intents = detect_intents(question)
@@ -104,29 +124,39 @@ def build_question_pack(session: Session, snapshot: Snapshot, question: str, gat
         res = gateway.execute(ReadFileRange(tool="read_file_range", path=r["path"], start_line=start, end_line=end))
         if "error" not in res:
             pack["excerpts"].append(res)
-    top_symbol = next((r["key"] for r in results if r["kind"] == "symbol"), None)
-    if top_symbol:
+    focus = focus_symbols(question, results, idx)
+    usage_out: list[dict[str, Any]] = []
+    impact_out: list[dict[str, Any]] = []
+    for key in focus:
         if "usage" in intents or not intents:
-            u = usage(session, idx, top_symbol, depth=2)
-            pack["relationships"]["usage"] = {
-                "symbol": top_symbol,
-                "direct_references": [
-                    _compact(x, ("key", "label", "relation", "resolution", "via", "evidence_id")) for x in u.get("direct_references", [])[:12]
-                ],
-                "importing_files": [_compact(x, ("key", "evidence_id")) for x in u.get("importing_files", [])[:8]],
-                "related_routes": [_compact(x, ("key", "label")) for x in u.get("related_routes", [])[:6]],
-                "direct_callees": [_compact(x, ("key", "label", "resolution", "evidence_id")) for x in u.get("direct_callees", [])[:10]],
-            }
+            u = usage(session, idx, key, depth=2)
+            usage_out.append(
+                {
+                    "symbol": key,
+                    "direct_references": [
+                        _compact(x, ("key", "label", "relation", "resolution", "via", "evidence_id")) for x in u.get("direct_references", [])[:10]
+                    ],
+                    "importing_files": [_compact(x, ("key", "evidence_id")) for x in u.get("importing_files", [])[:6]],
+                    "related_routes": [_compact(x, ("key", "label")) for x in u.get("related_routes", [])[:6]],
+                    "direct_callees": [_compact(x, ("key", "label", "resolution", "evidence_id")) for x in u.get("direct_callees", [])[:8]],
+                }
+            )
         if "impact" in intents:
-            im = impact(idx, top_symbol, depth=3)
-            pack["relationships"]["impact"] = {
-                "symbol": top_symbol,
-                "direct_dependents": [_compact(x, ("key", "label", "via", "evidence_id")) for x in im.get("direct_dependents", [])[:12]],
-                "transitive_dependents": [_compact(x, ("key", "depth")) for x in im.get("transitive_dependents", [])[:15]],
-                "potentially_affected_routes": [_compact(x, ("key", "label")) for x in im.get("potentially_affected_routes", [])[:8]],
-                "related_tests": im.get("related_tests", [])[:8],
-                "limitations": im.get("limitations"),
-            }
+            im = impact(idx, key, depth=5)  # routes are often 4+ hops from a leaf method
+            impact_out.append(
+                {
+                    "symbol": key,
+                    "direct_dependents": [_compact(x, ("key", "label", "via", "evidence_id")) for x in im.get("direct_dependents", [])[:10]],
+                    "transitive_dependents": [_compact(x, ("key", "depth", "via", "through", "evidence_id")) for x in im.get("transitive_dependents", [])[:12]],
+                    "potentially_affected_routes": [_compact(x, ("key", "label")) for x in im.get("potentially_affected_routes", [])[:8]],
+                    "related_tests": im.get("related_tests", [])[:8],
+                }
+            )
+    if usage_out:
+        pack["relationships"]["usage"] = usage_out
+    if impact_out:
+        pack["relationships"]["impact"] = impact_out
+        pack["relationships"]["impact_limitations"] = impact(idx, focus[0], depth=1).get("limitations")
     if "flow" in intents:
         eps = [e for e in entry_points(session, snapshot, idx) if e.get("traceable")]
         toks = {t.lower() for t in re.findall(r"[A-Za-z]{3,}", question)}
