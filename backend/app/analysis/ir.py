@@ -18,6 +18,7 @@ class SymbolInfo:
     docstring: str | None = None
     parent: str | None = None  # qualified name of enclosing class
     bases: list[str] = field(default_factory=list)
+    returns: str | None = None  # declared result type (dotted name), when statically known
 
 
 @dataclass

@@ -10,6 +10,7 @@ from __future__ import annotations
 import posixpath
 import re
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -119,8 +120,9 @@ def _method_for(language: str) -> ExtractionMethod:
 
 
 class SnapshotAnalyzer:
-    def __init__(self, session: Session, repo: Repository, snapshot: Snapshot) -> None:
+    def __init__(self, session: Session, repo: Repository, snapshot: Snapshot, progress: Callable[[str, str], None] | None = None) -> None:
         self.session = session
+        self._report = progress or (lambda stage, message: None)
         self.repo = repo
         self.snapshot = snapshot
         self.root = Path(snapshot.storage_path)
@@ -165,6 +167,7 @@ class SnapshotAnalyzer:
             self.g.node(file_key(f.path), "file", f.path, f.path, 1, f.line_count or 1, language=f.language, category=f.category)
 
         # 1. parse code (reusing identical files from earlier snapshots when possible)
+        self._report("symbols", f"Extracting symbols from {sum(1 for f in analyzed if f.language in PARSED_LANGUAGES)} source files")
         reusable = self._reusable_ir() if incremental else {}
         analyses: dict[str, FileAnalysis] = {}
         for f in analyzed:
@@ -214,10 +217,12 @@ class SnapshotAnalyzer:
         self.analyses = analyses
 
         # 4. symbols, imports, inheritance (hierarchy first), calls, routes
+        self._report("relationships", f"Resolving imports, inheritance and calls across {len(analyses)} parsed files")
         self.bindings: dict[str, dict[str, tuple]] = {}
         self.stars: dict[str, list[str]] = defaultdict(list)
         self.top_symbols: dict[str, dict[str, SymbolInfo]] = {}
         self.sym_kind: dict[str, str] = {}
+        self.sym_returns: dict[str, tuple[str, str]] = {}  # symbol key -> (defining path, declared result type)
         self.bases: dict[str, list[str]] = defaultdict(list)
         self.subclasses: dict[str, list[str]] = defaultdict(list)
         self.unresolved_bases: Counter[str] = Counter()
@@ -243,6 +248,7 @@ class SnapshotAnalyzer:
         self._ops_files(analyzed)
 
         # 7. persist
+        self._report("architecture", f"Building the architecture graph ({len(self.g.nodes)} nodes) and evidence records")
         return self._persist(contents)
 
     # ------------------------------------------------------------------ symbols
@@ -254,6 +260,8 @@ class SnapshotAnalyzer:
             key = sym_key(path, s.qualified_name)
             self.g.node(key, s.kind, s.qualified_name, path, s.start_line, s.end_line, exported=s.exported, language=fa.language)
             self.sym_kind[key] = s.kind
+            if s.returns:
+                self.sym_returns[key] = (path, s.returns)
             parent_key = sym_key(path, s.parent) if s.parent else file_key(path)
             self.g.edge(parent_key, key, "contains", "resolved", eid)
             self.symbol_rows.append(
@@ -456,6 +464,8 @@ class SnapshotAnalyzer:
         head = parts[0]
         if head in ("self", "this", "cls", "super"):
             cls_key = self._enclosing_class(path, caller)
+            if len(parts) == 3 and cls_key and head in ("self", "this"):
+                return self._attribute_call(cls_key, parts[1], parts[2])
             if len(parts) == 2 and cls_key:
                 return self._dispatch(cls_key, parts[1], include_self=head != "super", dynamic=head in ("self", "this"))
             if len(parts) == 2:
@@ -464,11 +474,11 @@ class SnapshotAnalyzer:
         if allow_local_types and fa is not None and len(parts) == 2:
             ctor = fa.local_types.get(caller, {}).get(head) or fa.instantiations.get(head)
             if ctor:
-                cls = self._resolve_name(path, ctor.split("."), caller, allow_local_types=False)
-                if cls is not None and self.sym_kind.get(cls.key) in CLASS_KINDS:
-                    t = self._dispatch(cls.key, parts[1], include_self=True, dynamic=True)
+                cls_key, via = self._class_for(path, ctor, caller)
+                if cls_key:
+                    t = self._dispatch(cls_key, parts[1], include_self=True, dynamic=True)
                     if t.resolution == "resolved":
-                        t.via = "declared_or_constructed_type"
+                        t.via = via
                     return t
         if head in tops:
             tpath, sym = tops[head]
@@ -492,6 +502,38 @@ class SnapshotAnalyzer:
             return star
         if len(parts) == 1:
             return Target(f"unresolved:name:{head}", "unresolved", "name_not_found")
+        return None
+
+    def _class_for(self, path: str, dotted: str, caller: str = "<module>") -> tuple[str | None, str]:
+        """Class a value of type/constructor/factory `dotted` has: the class itself, or (one bounded hop)
+        the declared result type of a statically resolved function."""
+        t = self._resolve_name(path, dotted.split("."), caller, allow_local_types=False)
+        if t is None:
+            return None, ""
+        if self.sym_kind.get(t.key) in CLASS_KINDS:
+            return t.key, "declared_or_constructed_type"
+        if t.resolution == "resolved" and t.key in self.sym_returns:
+            rpath, rtype = self.sym_returns[t.key]
+            rt = self._resolve_name(rpath, rtype.split("."), "<module>", allow_local_types=False)
+            if rt is not None and self.sym_kind.get(rt.key) in CLASS_KINDS:
+                return rt.key, "declared_return_type"
+        return None, ""
+
+    def _attribute_call(self, cls_key: str, attr: str, method: str) -> Target | None:
+        """`self.attr.method()` where the attribute's type was recorded in the class (or a base class)."""
+        for owner in [cls_key, *self._ancestors(cls_key)]:
+            opath, _, oqual = owner[4:].partition("#")
+            fa = self.analyses.get(opath)
+            typ = fa.local_types.get(f"{oqual}#attrs", {}).get(attr) if fa else None
+            if not typ:
+                continue
+            tcls, _via = self._class_for(opath, typ)
+            if tcls is None:
+                return None
+            t = self._dispatch(tcls, method, include_self=True, dynamic=True)
+            if t.resolution == "resolved":
+                t.via = "attribute_type"
+            return t
         return None
 
     def _star_lookup(self, path: str, name: str, rest: list[str]) -> Target | None:

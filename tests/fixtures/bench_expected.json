@@ -1,71 +1,282 @@
 {
   "_comment": "Ground truth for tests/fixtures/bench_repo, written from the source code by hand (not from analyzer output).",
   "symbols": [
-    "svc/core/models.py#Account", "svc/core/models.py#Account.__init__", "svc/core/models.py#Account.validate",
-    "svc/core/models.py#Account.describe", "svc/core/models.py#Account.label", "svc/core/models.py#Account.normalize",
-    "svc/core/models.py#Account.create", "svc/core/models.py#Admin", "svc/core/models.py#Admin.label", "svc/core/models.py#Admin.promote",
-    "svc/core/auth.py#check_password", "svc/core/auth.py#login",
-    "svc/core/tokens.py#issue_token", "svc/core/tokens.py#sign",
-    "svc/api/app.py#login_route", "svc/api/app.py#admin_route", "svc/api/app.py#helper_factory",
+    "svc/core/models.py#Account",
+    "svc/core/models.py#Account.__init__",
+    "svc/core/models.py#Account.validate",
+    "svc/core/models.py#Account.describe",
+    "svc/core/models.py#Account.label",
+    "svc/core/models.py#Account.normalize",
+    "svc/core/models.py#Account.create",
+    "svc/core/models.py#Admin",
+    "svc/core/models.py#Admin.label",
+    "svc/core/models.py#Admin.promote",
+    "svc/core/auth.py#check_password",
+    "svc/core/auth.py#login",
+    "svc/core/tokens.py#issue_token",
+    "svc/core/tokens.py#sign",
+    "svc/api/app.py#login_route",
+    "svc/api/app.py#admin_route",
+    "svc/api/app.py#helper_factory",
     "tests/test_auth.py#test_login",
-    "web/src/lib/format.ts#formatName", "web/src/lib/format.ts#Formatter", "web/src/lib/format.ts#Formatter.run", "web/src/lib/format.ts#Formatter.clean",
-    "web/src/lib/extra.ts#shout", "web/src/main.ts#render", "web/src/widget.ts#Widget",
-    "gosvc/internal/store/store.go#Store", "gosvc/internal/store/store.go#Open", "gosvc/internal/store/store.go#Store.Add", "gosvc/internal/store/store.go#Store.flush",
-    "gosvc/cmd/server/main.go#handle", "gosvc/cmd/server/main.go#main",
-    "javasvc/src/main/java/com/acme/svc/UserService.java#UserService", "javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find",
-    "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService", "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService.audit",
-    "javasvc/src/main/java/com/acme/web/UserController.java#UserController", "javasvc/src/main/java/com/acme/web/UserController.java#UserController.get"
+    "web/src/lib/format.ts#formatName",
+    "web/src/lib/format.ts#Formatter",
+    "web/src/lib/format.ts#Formatter.run",
+    "web/src/lib/format.ts#Formatter.clean",
+    "web/src/lib/extra.ts#shout",
+    "web/src/main.ts#render",
+    "web/src/widget.ts#Widget",
+    "gosvc/internal/store/store.go#Store",
+    "gosvc/internal/store/store.go#Open",
+    "gosvc/internal/store/store.go#Store.Add",
+    "gosvc/internal/store/store.go#Store.flush",
+    "gosvc/cmd/server/main.go#handle",
+    "gosvc/cmd/server/main.go#main",
+    "javasvc/src/main/java/com/acme/svc/UserService.java#UserService",
+    "javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find",
+    "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService",
+    "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService.audit",
+    "javasvc/src/main/java/com/acme/web/UserController.java#UserController",
+    "javasvc/src/main/java/com/acme/web/UserController.java#UserController.get",
+    "web/src/main.ts#quick"
   ],
   "relationships": [
-    ["svc/core/auth.py#login", "calls", "svc/core/models.py#Account.create"],
-    ["svc/core/auth.py#login", "calls", "svc/core/auth.py#check_password"],
-    ["svc/core/auth.py#login", "calls", "svc/core/tokens.py#issue_token"],
-    ["svc/core/auth.py#check_password", "calls", "svc/core/models.py#Account.validate"],
-    ["svc/core/tokens.py#issue_token", "calls", "svc/core/tokens.py#sign"],
-    ["svc/core/models.py#Account.create", "calls", "svc/core/models.py#Account.normalize"],
-    ["svc/core/models.py#Account.describe", "calls", "svc/core/models.py#Account.label"],
-    ["svc/core/models.py#Account.describe", "calls", "svc/core/models.py#Admin.label"],
-    ["svc/core/models.py#Admin.promote", "calls", "svc/core/models.py#Account.validate"],
-    ["svc/core/models.py#Admin.promote", "calls", "svc/core/models.py#Account.describe"],
-    ["svc/core/models.py#Admin", "inherits", "svc/core/models.py#Account"],
-    ["svc/api/app.py#login_route", "calls", "svc/core/auth.py#login"],
-    ["svc/api/app.py#admin_route", "calls", "svc/core/models.py#Admin"],
-    ["svc/api/app.py#admin_route", "calls", "svc/core/models.py#Admin.promote"],
-    ["svc/api/app.py#admin_route", "calls", "svc/api/app.py#helper_factory"],
-    ["file:svc/api/app.py", "calls", "svc/core/auth.py#login"],
-    ["tests/test_auth.py#test_login", "calls", "svc/core/auth.py#login"],
-    ["web/src/main.ts#render", "calls", "web/src/lib/format.ts#formatName"],
-    ["web/src/main.ts#render", "calls", "web/src/lib/format.ts#Formatter"],
-    ["web/src/main.ts#render", "calls", "web/src/lib/format.ts#Formatter.run"],
-    ["web/src/main.ts#render", "calls", "web/src/lib/extra.ts#shout"],
-    ["web/src/main.ts#render", "calls", "web/src/widget.ts#Widget"],
-    ["web/src/lib/format.ts#Formatter.run", "calls", "web/src/lib/format.ts#Formatter.clean"],
-    ["web/src/lib/format.ts#Formatter.clean", "calls", "web/src/lib/format.ts#formatName"],
-    ["gosvc/cmd/server/main.go#handle", "calls", "gosvc/internal/store/store.go#Open"],
-    ["gosvc/cmd/server/main.go#handle", "calls", "gosvc/internal/store/store.go#Store.Add"],
-    ["gosvc/internal/store/store.go#Store.Add", "calls", "gosvc/internal/store/store.go#Store.flush"],
-    ["javasvc/src/main/java/com/acme/web/UserController.java#UserController", "calls", "javasvc/src/main/java/com/acme/svc/UserService.java#UserService"],
-    ["javasvc/src/main/java/com/acme/web/UserController.java#UserController.get", "calls", "javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find"],
-    ["javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find", "calls", "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService.audit"],
-    ["javasvc/src/main/java/com/acme/svc/UserService.java#UserService", "inherits", "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService"]
+    [
+      "svc/core/auth.py#login",
+      "calls",
+      "svc/core/models.py#Account.create"
+    ],
+    [
+      "svc/core/auth.py#login",
+      "calls",
+      "svc/core/auth.py#check_password"
+    ],
+    [
+      "svc/core/auth.py#login",
+      "calls",
+      "svc/core/tokens.py#issue_token"
+    ],
+    [
+      "svc/core/auth.py#check_password",
+      "calls",
+      "svc/core/models.py#Account.validate"
+    ],
+    [
+      "svc/core/tokens.py#issue_token",
+      "calls",
+      "svc/core/tokens.py#sign"
+    ],
+    [
+      "svc/core/models.py#Account.create",
+      "calls",
+      "svc/core/models.py#Account.normalize"
+    ],
+    [
+      "svc/core/models.py#Account.describe",
+      "calls",
+      "svc/core/models.py#Account.label"
+    ],
+    [
+      "svc/core/models.py#Account.describe",
+      "calls",
+      "svc/core/models.py#Admin.label"
+    ],
+    [
+      "svc/core/models.py#Admin.promote",
+      "calls",
+      "svc/core/models.py#Account.validate"
+    ],
+    [
+      "svc/core/models.py#Admin.promote",
+      "calls",
+      "svc/core/models.py#Account.describe"
+    ],
+    [
+      "svc/core/models.py#Admin",
+      "inherits",
+      "svc/core/models.py#Account"
+    ],
+    [
+      "svc/api/app.py#login_route",
+      "calls",
+      "svc/core/auth.py#login"
+    ],
+    [
+      "svc/api/app.py#admin_route",
+      "calls",
+      "svc/core/models.py#Admin"
+    ],
+    [
+      "svc/api/app.py#admin_route",
+      "calls",
+      "svc/core/models.py#Admin.promote"
+    ],
+    [
+      "svc/api/app.py#admin_route",
+      "calls",
+      "svc/api/app.py#helper_factory"
+    ],
+    [
+      "file:svc/api/app.py",
+      "calls",
+      "svc/core/auth.py#login"
+    ],
+    [
+      "tests/test_auth.py#test_login",
+      "calls",
+      "svc/core/auth.py#login"
+    ],
+    [
+      "web/src/main.ts#render",
+      "calls",
+      "web/src/lib/format.ts#formatName"
+    ],
+    [
+      "web/src/main.ts#render",
+      "calls",
+      "web/src/lib/format.ts#Formatter"
+    ],
+    [
+      "web/src/main.ts#render",
+      "calls",
+      "web/src/lib/format.ts#Formatter.run"
+    ],
+    [
+      "web/src/main.ts#render",
+      "calls",
+      "web/src/lib/extra.ts#shout"
+    ],
+    [
+      "web/src/main.ts#render",
+      "calls",
+      "web/src/widget.ts#Widget"
+    ],
+    [
+      "web/src/lib/format.ts#Formatter.run",
+      "calls",
+      "web/src/lib/format.ts#Formatter.clean"
+    ],
+    [
+      "web/src/lib/format.ts#Formatter.clean",
+      "calls",
+      "web/src/lib/format.ts#formatName"
+    ],
+    [
+      "gosvc/cmd/server/main.go#handle",
+      "calls",
+      "gosvc/internal/store/store.go#Open"
+    ],
+    [
+      "gosvc/cmd/server/main.go#handle",
+      "calls",
+      "gosvc/internal/store/store.go#Store.Add"
+    ],
+    [
+      "gosvc/internal/store/store.go#Store.Add",
+      "calls",
+      "gosvc/internal/store/store.go#Store.flush"
+    ],
+    [
+      "javasvc/src/main/java/com/acme/web/UserController.java#UserController",
+      "calls",
+      "javasvc/src/main/java/com/acme/svc/UserService.java#UserService"
+    ],
+    [
+      "javasvc/src/main/java/com/acme/web/UserController.java#UserController.get",
+      "calls",
+      "javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find"
+    ],
+    [
+      "javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find",
+      "calls",
+      "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService.audit"
+    ],
+    [
+      "javasvc/src/main/java/com/acme/svc/UserService.java#UserService",
+      "inherits",
+      "javasvc/src/main/java/com/acme/svc/BaseService.java#BaseService"
+    ],
+    [
+      "web/src/main.ts#quick",
+      "calls",
+      "web/src/lib/format.ts#Formatter.run"
+    ],
+    [
+      "file:web/src/main.ts",
+      "calls",
+      "web/src/lib/format.ts#Formatter"
+    ]
   ],
   "ambiguous_expected": [
-    ["svc/core/models.py#Account.describe", "calls", "svc/core/models.py#Account.label"]
+    [
+      "svc/core/models.py#Account.describe",
+      "calls",
+      "svc/core/models.py#Account.label"
+    ]
   ],
   "must_not_resolve": [
-    {"source": "svc/api/app.py#admin_route", "target_label_suffix": ".run", "reason": "helper_factory().run() is a call on a dynamic value"}
+    {
+      "source": "svc/api/app.py#admin_route",
+      "target_label_suffix": ".run",
+      "reason": "helper_factory().run() is a call on a dynamic value"
+    }
   ],
-  "routes": ["POST /login", "GET /admin/{name}", "GET /items", "GET /users"],
-  "dependencies": {"fastapi": "observed_import", "react": "not_observed", "github.com/gin-gonic/gin": "observed_import", "org.springframework:spring-web": "observed_import"},
-  "flow": {"entry": "POST /login", "must_reach": ["svc/core/auth.py#login", "svc/core/auth.py#check_password", "svc/core/tokens.py#issue_token", "svc/core/tokens.py#sign", "svc/core/models.py#Account.create", "svc/core/models.py#Account.normalize"]},
+  "routes": [
+    "POST /login",
+    "GET /admin/{name}",
+    "GET /items",
+    "GET /users"
+  ],
+  "dependencies": {
+    "fastapi": "observed_import",
+    "react": "not_observed",
+    "github.com/gin-gonic/gin": "observed_import",
+    "org.springframework:spring-web": "observed_import"
+  },
+  "flow": {
+    "entry": "POST /login",
+    "must_reach": [
+      "svc/core/auth.py#login",
+      "svc/core/auth.py#check_password",
+      "svc/core/tokens.py#issue_token",
+      "svc/core/tokens.py#sign",
+      "svc/core/models.py#Account.create",
+      "svc/core/models.py#Account.normalize"
+    ]
+  },
   "retrieval": [
-    {"query": "where is issue_token used", "expect": "sym:svc/core/tokens.py#issue_token"},
-    {"query": "admin promote", "expect": "sym:svc/core/models.py#Admin.promote"},
-    {"query": "Store Add", "expect": "sym:gosvc/internal/store/store.go#Store.Add"},
-    {"query": "formatName", "expect": "sym:web/src/lib/format.ts#formatName"},
-    {"query": "UserService find", "expect": "sym:javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find"},
-    {"query": "check password", "expect": "sym:svc/core/auth.py#check_password"}
+    {
+      "query": "where is issue_token used",
+      "expect": "sym:svc/core/tokens.py#issue_token"
+    },
+    {
+      "query": "admin promote",
+      "expect": "sym:svc/core/models.py#Admin.promote"
+    },
+    {
+      "query": "Store Add",
+      "expect": "sym:gosvc/internal/store/store.go#Store.Add"
+    },
+    {
+      "query": "formatName",
+      "expect": "sym:web/src/lib/format.ts#formatName"
+    },
+    {
+      "query": "UserService find",
+      "expect": "sym:javasvc/src/main/java/com/acme/svc/UserService.java#UserService.find"
+    },
+    {
+      "query": "check password",
+      "expect": "sym:svc/core/auth.py#check_password"
+    }
   ],
-  "misleading_readme": {"claimed_but_absent_technologies": ["GraphQL", "Redis"]},
-  "missing_documentation": {"installation_section": false}
+  "misleading_readme": {
+    "claimed_but_absent_technologies": [
+      "GraphQL",
+      "Redis"
+    ]
+  },
+  "missing_documentation": {
+    "installation_section": false
+  }
 }

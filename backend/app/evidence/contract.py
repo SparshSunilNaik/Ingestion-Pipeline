@@ -13,7 +13,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 CONTRACT_VERSION = "1.1"  # 1.1: IDs also hash the analyzer version, so two analyses of one commit never collide
-ANALYZER_VERSION = "0.2.0"
+ANALYZER_VERSION = "0.3.0"
 
 
 class EvidenceCategory(StrEnum):

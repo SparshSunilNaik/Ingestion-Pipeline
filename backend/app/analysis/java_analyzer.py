@@ -159,6 +159,10 @@ class JavaAnalyzer:
                 for d in (c for c in member.named_children if c.type == "variable_declarator"):
                     if typ:
                         fields[_t(d.child_by_field_name("name"))] = typ
+                    init = d.child_by_field_name("value")
+                    if init is not None:
+                        # Field initializers run on construction; attribute their calls to the class itself.
+                        self._walk(r, init, qual, {})
         for member in body.named_children:
             if member.type in _TYPE_DECLS:
                 self._type(r, member, qual, prefix)
@@ -178,6 +182,7 @@ class JavaAnalyzer:
                         exported="public" in mods_m,
                         signature=sig[:300],
                         parent=qual,
+                        returns=_type_name(member.child_by_field_name("type")) if member.type == "method_declaration" else None,
                     )
                 )
                 if mname == "main" and "static" in mods_m and parent is None:

@@ -268,6 +268,10 @@ class _Walker:
             if not self.scope:
                 if exported:
                     self.add_symbol("variable", name, decl, exported)
+                if value is not None and value.type == "new_expression":
+                    ctor = _member_chain(value.child_by_field_name("constructor") or value)
+                    if ctor:
+                        self.r.instantiations[name] = ctor  # module-level `const x = new C()` types x everywhere in the file
                 if value is not None and value.type == "call_expression":
                     fn = _member_chain(value.child_by_field_name("function") or value)
                     if fn:

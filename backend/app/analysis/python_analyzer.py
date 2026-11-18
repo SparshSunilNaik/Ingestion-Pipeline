@@ -52,6 +52,19 @@ class _Visitor(ast.NodeVisitor):
                 return ".".join(s[1] for s in self.scope[: i + 1])
         return "<module>"
 
+    def _method_class(self) -> str | None:
+        """Qualified name of the class whose method body we are directly in."""
+        if len(self.scope) >= 2 and self.scope[-1][0] == "function" and self.scope[-2][0] == "class":
+            return ".".join(s[1] for s in self.scope[:-1])
+        return None
+
+    def _record_self_attr(self, target: ast.expr, typ: str | None) -> None:
+        """`self.x = Cls(...)` / `self.x = param` (annotated) / `self.x: T` types attribute x of the class."""
+        cls = self._method_class()
+        if not (cls and typ and isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "self"):
+            return
+        self.r.local_types.setdefault(f"{cls}#attrs", {}).setdefault(target.attr, typ)
+
     def _enclosing_class(self) -> str | None:
         if self.scope and self.scope[-1][0] == "class":
             return ".".join(s[1] for s in self.scope)
@@ -78,6 +91,7 @@ class _Visitor(ast.NodeVisitor):
                 signature=f"{prefix} {node.name}({args})"[:500],
                 docstring=(ast.get_docstring(node) or "")[:500] or None,
                 parent=cls,
+                returns=_dotted(node.returns) if node.returns is not None else None,
             )
         )
         for dec in node.decorator_list:
@@ -174,11 +188,21 @@ class _Visitor(ast.NodeVisitor):
         if self.scope and isinstance(node.value, ast.Call):
             ctor = _dotted(node.value.func)
             caller = self._current_callable()
-            # Heuristic: CapitalisedName(...) is treated as a constructor call.
-            if ctor and caller != "<module>" and ctor.rsplit(".", 1)[-1][:1].isupper():
+            # `x = Cls(...)` types x as Cls; `x = factory(...)` types x through factory's return annotation
+            # (resolved in the engine; unannotated factories leave x untyped).
+            if ctor and caller != "<module>":
                 for t in node.targets:
                     if isinstance(t, ast.Name):
                         self.r.local_types.setdefault(caller, {})[t.id] = ctor
+        if self.scope:
+            caller = self._current_callable()
+            typ = None
+            if isinstance(node.value, ast.Call):
+                typ = _dotted(node.value.func)
+            elif isinstance(node.value, ast.Name):
+                typ = self.r.local_types.get(caller, {}).get(node.value.id)
+            for t in node.targets:
+                self._record_self_attr(t, typ)
         if not self.scope and isinstance(node.value, ast.Call):
             ctor = _dotted(node.value.func)
             if ctor:
@@ -189,6 +213,11 @@ class _Visitor(ast.NodeVisitor):
             for t in node.targets:
                 if isinstance(t, ast.Name) and t.id == "__all__" and isinstance(node.value, (ast.List, ast.Tuple)):
                     self.r.exports.extend(v for v in (_str_const(e) for e in node.value.elts) if v)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if self.scope:
+            self._record_self_attr(node.target, _dotted(node.annotation))
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:

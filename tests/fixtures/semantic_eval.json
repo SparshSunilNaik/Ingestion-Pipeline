@@ -1,0 +1,213 @@
+{
+  "_comment": "Semantic-correctness evaluation set. Questions and expected facts were written by hand from the fixture source, independently of any model output. Automatic checks are keyword/evidence heuristics that flag answers for review; they are NOT a measure of semantic accuracy. Semantic accuracy is only what a human reviewer records.",
+  "version": 1,
+  "items": [
+    {
+      "id": "bench-login-flow",
+      "fixture": "bench",
+      "architecture": "layered Python service (FastAPI route -> domain function -> helpers)",
+      "question": "What happens when a user logs in via POST /login?",
+      "expected_facts": [
+        {"fact": "The route handler login_route delegates to login()", "all_of": [["login_route"], ["login"]]},
+        {"fact": "login() creates the account through Account.create", "all_of": [["account.create", "create"]]},
+        {"fact": "The password is checked by check_password, which calls Account.validate", "all_of": [["check_password"], ["validate"]]},
+        {"fact": "A token is produced by issue_token, which calls sign", "all_of": [["issue_token"], ["sign"]]},
+        {"fact": "A failed check raises ValueError ('denied')", "all_of": [["valueerror", "denied", "raise"]]}
+      ],
+      "required_evidence": ["svc/core/auth.py", "svc/core/tokens.py"],
+      "plausible_wrong": [
+        {"claim": "Sessions or tokens are stored in Redis", "patterns": ["redis"]},
+        {"claim": "Login is served through GraphQL", "patterns": ["graphql"]},
+        {"claim": "Tokens are JWTs", "patterns": ["\\bjwt\\b", "json web token"]},
+        {"claim": "Passwords are hashed with bcrypt", "patterns": ["bcrypt", "argon"]}
+      ],
+      "expect_uncertainty": false,
+      "reference_answers": {
+        "correct": {
+          "text": "POST /login is handled by login_route in svc/api/app.py, which calls login(name, password). login() normalises the name via Account.create, then calls check_password, which relies on Account.validate and a minimum password length; if the check fails it raises ValueError('denied'). Otherwise issue_token(account) returns sign(account.name).",
+          "cited_paths": ["svc/api/app.py", "svc/core/auth.py", "svc/core/tokens.py", "svc/core/models.py"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "POST /login validates the password with bcrypt and issues a JWT that is cached in Redis.",
+          "cited_paths": ["svc/core/auth.py"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "bench-validate-impact",
+      "fixture": "bench",
+      "architecture": "class hierarchy with override-aware dispatch",
+      "question": "Which code could be affected if Account.validate changes?",
+      "expected_facts": [
+        {"fact": "check_password calls Account.validate directly", "all_of": [["check_password"]]},
+        {"fact": "Admin.promote calls validate", "all_of": [["promote"]]},
+        {"fact": "login depends on it transitively, so POST /login is potentially affected", "all_of": [["login"]]},
+        {"fact": "The admin route is potentially affected through Admin.promote", "all_of": [["admin_route", "/admin"]]}
+      ],
+      "required_evidence": ["svc/core/auth.py", "svc/core/models.py"],
+      "plausible_wrong": [
+        {"claim": "Only the tests are affected", "patterns": ["only (the )?tests"]},
+        {"claim": "The Go store is affected", "patterns": ["store\\.add", "gosvc"]}
+      ],
+      "expect_uncertainty": false,
+      "reference_answers": {
+        "correct": {
+          "text": "Account.validate is called directly by check_password and by Admin.promote. login calls check_password, so POST /login (login_route) is potentially affected, and GET /admin/{name} (admin_route) is potentially affected through Admin.promote. The test test_login also exercises login.",
+          "cited_paths": ["svc/core/auth.py", "svc/core/models.py", "svc/api/app.py"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "Changing Account.validate affects only the tests; the Go Store.Add method also calls it.",
+          "cited_paths": ["tests/test_auth.py"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "bench-production-database",
+      "fixture": "bench",
+      "architecture": "unanswerable from code (README makes unsupported claims)",
+      "question": "Which database does this service use in production?",
+      "expected_facts": [],
+      "required_evidence": [],
+      "plausible_wrong": [
+        {"claim": "It uses Redis", "patterns": ["\\bredis\\b"]},
+        {"claim": "It uses PostgreSQL", "patterns": ["postgres"]},
+        {"claim": "It uses MySQL", "patterns": ["mysql"]},
+        {"claim": "It uses MongoDB", "patterns": ["mongo"]}
+      ],
+      "expect_uncertainty": true,
+      "reference_answers": {
+        "correct": {
+          "text": "The analysed code contains no database client or configuration, so the production database cannot be determined from this snapshot.",
+          "cited_paths": [],
+          "grounding": "insufficient_evidence"
+        },
+        "plausible_wrong": {
+          "text": "The service stores its data in Redis, as described in the README.",
+          "cited_paths": ["README.md"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "eval-items-request",
+      "fixture": "eval",
+      "architecture": "Flask app with factory function and abstract repository",
+      "question": "How does GET /items/<sku> produce its response?",
+      "expected_facts": [
+        {"fact": "get_item handles the route", "all_of": [["get_item"]]},
+        {"fact": "It builds the service with make_service", "all_of": [["make_service"]]},
+        {"fact": "InventoryService.lookup fetches the record from the repository", "all_of": [["lookup"], ["fetch"]]},
+        {"fact": "The repository is the in-memory MemoryRepo", "all_of": [["memoryrepo", "in-memory", "memory"]]},
+        {"fact": "The record is formatted by _present into sku/qty", "all_of": [["_present", "sku"]]}
+      ],
+      "required_evidence": ["inv/web.py", "inv/service.py"],
+      "plausible_wrong": [
+        {"claim": "Records are read from a SQL database", "patterns": ["\\bsql\\b", "sqlalchemy", "database"]},
+        {"claim": "The endpoint is implemented in Express", "patterns": ["express"]}
+      ],
+      "expect_uncertainty": false,
+      "reference_answers": {
+        "correct": {
+          "text": "get_item in inv/web.py calls make_service(repo), which returns an InventoryService around the module-level MemoryRepo. InventoryService.lookup calls self.repo.fetch(sku) — MemoryRepo.fetch reads an in-memory dict — and _present converts the tuple into {sku, qty}, which jsonify returns.",
+          "cited_paths": ["inv/web.py", "inv/service.py", "inv/storage.py"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "get_item queries the SQL database through SQLAlchemy and returns the row.",
+          "cited_paths": ["inv/web.py"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "eval-go-server",
+      "fixture": "eval",
+      "architecture": "Go net/http server with constructor function",
+      "question": "What does the invctl Go program expose and how is it started?",
+      "expected_facts": [
+        {"fact": "It registers /health with http.HandleFunc", "all_of": [["/health"]]},
+        {"fact": "Server.Health writes status OK", "all_of": [["health"]]},
+        {"fact": "server.New(\":8080\") creates the server", "all_of": [["new"], ["8080"]]},
+        {"fact": "Server.Run logs and calls http.ListenAndServe", "all_of": [["run"], ["listenandserve"]]}
+      ],
+      "required_evidence": ["invctl/cmd/invctl/main.go", "invctl/internal/server/server.go"],
+      "plausible_wrong": [
+        {"claim": "It uses the Gin framework", "patterns": ["\\bgin\\b"]},
+        {"claim": "It exposes a gRPC service", "patterns": ["grpc"]}
+      ],
+      "expect_uncertainty": false,
+      "reference_answers": {
+        "correct": {
+          "text": "main creates the server with server.New(\":8080\"), registers /health with http.HandleFunc pointing at Server.Health (which writes 200 OK), and starts it with Server.Run, which logs and calls http.ListenAndServe on the address.",
+          "cited_paths": ["invctl/cmd/invctl/main.go", "invctl/internal/server/server.go"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "invctl is a Gin application that exposes a gRPC health service.",
+          "cited_paths": ["invctl/cmd/invctl/main.go"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "eval-stock-level",
+      "fixture": "eval",
+      "architecture": "Spring controller with constructor injection and field initializer",
+      "question": "How is the stock level returned by StockController.level computed?",
+      "expected_facts": [
+        {"fact": "level calls clock.tick()", "all_of": [["tick"]]},
+        {"fact": "level returns ledger.balance(sku)", "all_of": [["balance"]]},
+        {"fact": "balance is total minus reserved", "all_of": [["total"], ["reserved"]]}
+      ],
+      "required_evidence": ["stock/src/main/java/org/stock/StockController.java", "stock/src/main/java/org/stock/StockLedger.java"],
+      "plausible_wrong": [
+        {"claim": "Stock levels are read from a database", "patterns": ["database", "\\bjpa\\b", "jdbc"]},
+        {"claim": "Results are cached", "patterns": ["cache"]}
+      ],
+      "expect_uncertainty": false,
+      "reference_answers": {
+        "correct": {
+          "text": "StockController.level calls clock.tick() on the Clock created by the field initializer and returns ledger.balance(sku). StockLedger.balance computes total(sku) - reserved(sku), which are constants 10 and 2 in this snapshot.",
+          "cited_paths": ["stock/src/main/java/org/stock/StockController.java", "stock/src/main/java/org/stock/StockLedger.java"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "level loads the stock row from a JPA repository and caches the result.",
+          "cited_paths": ["stock/src/main/java/org/stock/StockController.java"],
+          "grounding": "grounded"
+        }
+      }
+    },
+    {
+      "id": "eval-catalog-auth",
+      "fixture": "eval",
+      "architecture": "Express app without authentication (absence question)",
+      "question": "What authentication does the catalog API require?",
+      "expected_facts": [],
+      "required_evidence": [],
+      "plausible_wrong": [
+        {"claim": "It requires a JWT", "patterns": ["\\bjwt\\b", "bearer"]},
+        {"claim": "It uses OAuth", "patterns": ["oauth"]},
+        {"claim": "It checks an API key", "patterns": ["api key", "api-key"]}
+      ],
+      "expect_uncertainty": true,
+      "accept_absence_statement": ["no authentication", "no auth", "not require", "does not require", "without authentication", "no evidence of authentication"],
+      "reference_answers": {
+        "correct": {
+          "text": "No authentication was found: catalog/src/server.ts registers GET /catalog without any middleware, so the analysed code does not require authentication.",
+          "cited_paths": ["catalog/src/server.ts"],
+          "grounding": "grounded"
+        },
+        "plausible_wrong": {
+          "text": "The catalog API requires a bearer JWT validated by middleware.",
+          "cited_paths": ["catalog/src/server.ts"],
+          "grounding": "grounded"
+        }
+      }
+    }
+  ]
+}

@@ -29,13 +29,25 @@ def test_benchmark_thresholds() -> None:
     res = run_bench()
     assert res["symbol_extraction"]["precision"] == 1.0 and res["symbol_extraction"]["recall"] == 1.0
     assert res["relationship_resolution"]["precision"] == 1.0
-    assert res["relationship_resolution"]["recall"] >= 0.9
+    assert res["relationship_resolution"]["recall"] == 1.0
     assert res["ambiguous_dispatch_flagged"] and res["dynamic_call_not_over_resolved"]
     assert res["evidence_validity"]["rate"] == 1.0
     assert res["routes"]["recall"] == 1.0 and all(res["dependency_status_correct"].values())
     assert res["flow_tracing"]["must_reach_recall"] == 1.0
     assert res["retrieval"]["hit_at_3"] == 1.0
-    assert all(res["misleading_readme"].values()) and res["missing_documentation_reported"]
+    assert res["claimed_technologies_not_reported_as_frameworks"] and res["readme_purpose_labelled_documentation_claim"]
+    assert res["installation_documentation_correct"]
+
+
+def test_heldout_evaluation_fixture() -> None:
+    """Held-out fixture: thresholds are deliberately looser than the development fixture's."""
+    res = run_bench(fixture="eval")
+    assert res["symbol_extraction"]["precision"] == 1.0 and res["symbol_extraction"]["recall"] >= 0.95
+    assert res["relationship_resolution"]["precision"] == 1.0 and res["relationship_resolution"]["recall"] >= 0.9
+    assert res["ambiguous_dispatch_flagged"] and res["dynamic_call_not_over_resolved"]
+    assert res["evidence_validity"]["rate"] == 1.0 and res["routes"]["recall"] == 1.0
+    assert res["flow_tracing"]["must_reach_recall"] == 1.0 and res["retrieval"]["hit_at_3"] >= 0.8
+    assert res["installation_documentation_correct"]
 
 
 def test_flow_tracing(session, bench_snapshot) -> None:

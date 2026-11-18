@@ -164,8 +164,8 @@ class IngestionPipeline:
             )
             session.commit()
 
-            self._progress(session, job_id, "analyzing", 55, "Parsing source, resolving references, building graph")
-            summary = SnapshotAnalyzer(session, repo, snapshot).run()
+            pct = {"symbols": 50, "relationships": 62, "architecture": 74}
+            summary = SnapshotAnalyzer(session, repo, snapshot, lambda stage, msg: self._progress(session, job_id, stage, pct[stage], msg)).run()
             snapshot.analysis_summary = summary
             session.commit()
 

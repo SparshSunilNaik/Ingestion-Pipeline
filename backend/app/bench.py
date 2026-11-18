@@ -2,6 +2,7 @@
 
     uv run python -m app.bench                 # deterministic metrics (no network, no model)
     uv run python -m app.bench --live          # also a bounded live Q&A claim-support check via OpenCode
+    uv run python -m app.bench --fixture eval  # held-out evaluation fixture (never tune against it)
 
 Writes JSON to stdout (and to --out if given).
 """
@@ -69,11 +70,16 @@ def _prf(found: set, expected: set) -> dict[str, Any]:
     }
 
 
-def run(live: bool = False) -> dict[str, Any]:
-    truth = json.loads((FIXTURES / "bench_expected.json").read_text(encoding="utf-8"))
+FIXTURE_NAMES = ("bench", "eval")
+
+
+def run(live: bool = False, fixture: str = "bench") -> dict[str, Any]:
+    if fixture not in FIXTURE_NAMES:
+        raise ValueError(f"unknown fixture {fixture!r}")
+    truth = json.loads((FIXTURES / f"{fixture}_expected.json").read_text(encoding="utf-8"))
     tmp = Path(tempfile.mkdtemp(prefix="ip-bench-"))
     try:
-        repo = make_repo(FIXTURES / "bench_repo", tmp / "remote")
+        repo = make_repo(FIXTURES / f"{fixture}_repo", tmp / "remote")
         settings = Settings(data_dir=tmp / "data", start_worker=False, git_allowed_protocols="file", auth_mode="disabled", limits=RepositoryLimits())
         settings.opencode.mode = "managed" if live else "disabled"
         settings.ensure_dirs()
@@ -115,10 +121,10 @@ def run(live: bool = False) -> dict[str, Any]:
         relationships["missed"] = sorted(" ".join(r) for r in expected_rel - found_rel)
         relationships["unexpected"] = sorted(" ".join(r) for r in found_rel - expected_rel)
         amb = {(norm(e.source_key), e.kind, norm(e.target_key)) for e in edges if e.resolution == "ambiguous"}
-        ambiguity_ok = all(tuple(a) in amb for a in truth["ambiguous_expected"])
+        ambiguity_ok = all(tuple(a) in amb for a in truth.get("ambiguous_expected", []))
         nodes = {n.key: n for n in session.scalars(select(GraphNode).where(GraphNode.snapshot_id == sid))}
         negatives_ok = True
-        for neg in truth["must_not_resolve"]:
+        for neg in truth.get("must_not_resolve", []):
             for e in edges:
                 if (
                     norm(e.source_key) == neg["source"]
@@ -161,8 +167,10 @@ def run(live: bool = False) -> dict[str, Any]:
         purpose = next(s for s in report.content["overview"] if s["title"] == "Purpose") if report else {"claims": []}
         readme_claims = [c for c in purpose["claims"] if c["statement"].startswith("README states")]
         install = next(s for s in report.content["installation"] if s["title"] == "Installation instructions") if report else {"claims": []}
+        install_unknown = any(c["basis"] == "unknown" for c in install["claims"])
         result: dict[str, Any] = {
-            "repository": "tests/fixtures/bench_repo",
+            "repository": f"tests/fixtures/{fixture}_repo",
+            "fixture": fixture,
             "analyzer_version": snap.analyzer_version,
             "symbol_extraction": symbols,
             "relationship_resolution": relationships,
@@ -173,11 +181,14 @@ def run(live: bool = False) -> dict[str, Any]:
             "dependency_status_correct": dep_ok,
             "flow_tracing": {"entry": ep["label"], "must_reach_recall": round(flow_recall, 3), "steps": len(fl["steps"])},
             "retrieval": {"hit_at_3": round(hits / len(truth["retrieval"]), 3), "mrr": round(rr / len(truth["retrieval"]), 3), "per_query": per_query},
-            "misleading_readme": {
-                "claimed_technologies_not_reported_as_frameworks": not (set(truth["misleading_readme"]["claimed_but_absent_technologies"]) & fw),
-                "readme_purpose_labelled_documentation_claim": bool(readme_claims) and all(c["basis"] == "documentation_claim" for c in readme_claims),
-            },
-            "missing_documentation_reported": any(c["basis"] == "unknown" for c in install["claims"]),
+            "readme_purpose_labelled_documentation_claim": bool(readme_claims) and all(c["basis"] == "documentation_claim" for c in readme_claims),
+            # Expected `installation_section: false` -> the gap must be reported as unknown; `true` -> it must not be.
+            "installation_documentation_correct": install_unknown != truth.get("missing_documentation", {}).get("installation_section", False),
+            **(
+                {"claimed_technologies_not_reported_as_frameworks": not (set(truth["misleading_readme"]["claimed_but_absent_technologies"]) & fw)}
+                if "misleading_readme" in truth
+                else {}
+            ),
             "coverage": {k: snap.coverage.get(k) for k in ("tracked_files", "analyzed_files", "is_partial")},
             "runtime_seconds": round(elapsed, 3),
             "peak_python_memory_mb": round(peak / 1024 / 1024, 2),
@@ -224,9 +235,10 @@ def _live_qa(session, snap: Snapshot, settings: Settings) -> dict[str, Any]:  # 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--fixture", choices=FIXTURE_NAMES, default="bench")
     ap.add_argument("--out")
     args = ap.parse_args()
-    res = run(live=args.live)
+    res = run(live=args.live, fixture=args.fixture)
     text = json.dumps(res, indent=2)
     print(text)
     if args.out:

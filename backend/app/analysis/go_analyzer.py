@@ -87,6 +87,22 @@ def _receiver_type(n: Node | None) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _result_type(n: Node | None) -> str | None:
+    """Declared result type of a Go function: `T`, `*T`, `pkg.T`, or the first result of `(T, error)`."""
+    if n is None:
+        return None
+    if n.type == "parameter_list":
+        decls = [c for c in n.named_children if c.type == "parameter_declaration"]
+        if not decls:
+            return None
+        n = decls[0].child_by_field_name("type")
+    while n is not None and n.type == "pointer_type":
+        n = n.named_children[0] if n.named_children else None
+    if n is None or n.type not in ("type_identifier", "qualified_type"):
+        return None
+    return _t(n) or None
+
+
 class GoAnalyzer:
     languages = frozenset({"go"})
 
@@ -123,7 +139,7 @@ class GoAnalyzer:
                     )
             elif node.type == "function_declaration":
                 name = _t(node.child_by_field_name("name"))
-                self._symbol(r, "function", name, name, node, None)
+                self._symbol(r, "function", name, name, node, None).returns = _result_type(node.child_by_field_name("result"))
                 if name == "main" and r.package == "main":
                     r.entry_points.append(EntryPointInfo(kind="go_main", name=f"{path}:main", line=node.start_point[0] + 1, end_line=node.end_point[0] + 1))
                 self._walk_body(r, node.child_by_field_name("body"), name, None, router_vars)
@@ -131,7 +147,7 @@ class GoAnalyzer:
                 name = _t(node.child_by_field_name("name"))
                 recv_var, recv_type = _receiver_type(node.child_by_field_name("receiver"))
                 qual = f"{recv_type}.{name}" if recv_type else name
-                self._symbol(r, "method" if recv_type else "function", name, qual, node, recv_type)
+                self._symbol(r, "method" if recv_type else "function", name, qual, node, recv_type).returns = _result_type(node.child_by_field_name("result"))
                 self._walk_body(r, node.child_by_field_name("body"), qual, recv_var, router_vars)
             elif node.type == "type_declaration":
                 for spec in (c for c in node.named_children if c.type == "type_spec"):
@@ -200,6 +216,9 @@ class GoAnalyzer:
                             fn = _chain(rv.child_by_field_name("function"))
                             if fn in _ROUTER_CTORS:
                                 router_vars[_t(ln)] = _ROUTER_CTORS[fn]
+                            elif fn and caller != "<module>" and _t(ln) != "_":
+                                # `s := store.Open()`: typed later through Open's declared result type (engine).
+                                r.local_types.setdefault(caller, {})[_t(ln)] = fn
                         elif rv.type == "composite_literal" or (
                             rv.type == "unary_expression" and rv.named_children and rv.named_children[0].type == "composite_literal"
                         ):
