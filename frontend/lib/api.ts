@@ -1,6 +1,5 @@
-// Typed client for the Ingestion-Pipeline backend API.
-
-export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+// Typed client for the Ingestion-Pipeline backend. All calls are same-origin (/api is proxied by Next.js),
+// carry the session cookie, and send the CSRF header the backend requires for cookie-authenticated mutations.
 
 export class ApiError extends Error {
   constructor(
@@ -12,16 +11,23 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+async function request<T>(path: string, init?: RequestInit & { signal?: AbortSignal }): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(path, {
       ...init,
-      headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", "x-ip-csrf": "1", ...(init?.headers ?? {}) },
       cache: "no-store",
     });
-  } catch {
-    throw new ApiError(0, "network_error", `Cannot reach the backend at ${API_BASE}. Is it running?`);
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new ApiError(0, "network_error", "Cannot reach the backend. Is it running on port 8000?");
   }
   if (!res.ok) {
     let code = "http_error";
@@ -37,17 +43,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
+    if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.();
     throw new ApiError(res.status, code, message);
   }
   const type = res.headers.get("content-type") ?? "";
   return (type.includes("application/json") ? res.json() : res.text()) as Promise<T>;
 }
 
+const q = (params: Record<string, string | number | boolean | undefined | null>) => {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+};
+
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type Resolution = "resolved" | "ambiguous" | "external" | "unresolved";
 
 export interface Job {
   id: number;
-  kind: "ingest" | "agent_report";
+  kind: "ingest" | "agent_report" | "qa" | "selftest";
   repository_id: number | null;
   snapshot_id: number | null;
   requested_url: string;
@@ -86,16 +101,23 @@ export interface Repository {
   snapshots: SnapshotBrief[];
   current: SnapshotBrief | null;
   latest_job: Job | null;
+  current_summary: {
+    languages_by_bytes: Record<string, number>;
+    tracked_files: number | null;
+    analyzed_files: number | null;
+    total_bytes: number | null;
+    is_partial: boolean | null;
+    evidence_records: number | null;
+  } | null;
 }
 
 export interface Coverage {
   tracked_files: number;
-  inventoried_files: number;
-  tracked_files_beyond_limit: number;
-  eligible_text_files: number;
   analyzed_files: number;
   analyzed_bytes: number;
+  eligible_text_files: number;
   budget_skipped_files: number;
+  tracked_files_beyond_limit: number;
   is_partial: boolean;
   exclusions: Record<string, number>;
   limits: Record<string, number>;
@@ -116,10 +138,7 @@ export interface Snapshot {
     languages_by_files: Record<string, number>;
     languages_by_bytes: Record<string, number>;
     categories: Record<string, number>;
-    top_level_directories: Record<string, number>;
     documentation_files: string[];
-    dependency_manifests: string[];
-    configuration_files: string[];
     test_files_count: number;
     ci_files: string[];
     container_files: string[];
@@ -134,24 +153,17 @@ export interface Snapshot {
     central_files?: { key: string; path: string; imported_by: number }[];
     most_referenced_symbols?: { key: string; label: string; kind: string; path: string; references: number }[];
   };
-  repository: Omit<Repository, "snapshots" | "current" | "latest_job">;
+  repository: { id: number; owner: string; name: string; canonical_url: string; default_branch: string | null };
 }
 
-export interface FileRecord {
-  path: string;
-  size: number;
-  extension: string;
-  language: string | null;
-  category: string;
-  is_text: boolean;
-  analyzed: boolean;
-  exclusion_reason: string | null;
-  line_count: number | null;
-}
-
-export interface Page<T> {
-  total: number;
-  items: T[];
+export interface TreeFile {
+  p: string;
+  c: string;
+  l: string | null;
+  a: boolean;
+  s: number;
+  n: number | null;
+  x: string | null;
 }
 
 export interface Source {
@@ -163,38 +175,135 @@ export interface Source {
   lines: string[];
 }
 
-export interface GraphNode {
+export interface SymbolRow {
+  id: number;
+  path: string;
+  kind: string;
+  name: string;
+  qualified_name: string;
+  start_line: number;
+  end_line: number;
+  exported: boolean;
+  signature: string | null;
+  docstring: string | null;
+  evidence_id: string | null;
+}
+
+export interface NodeInfo {
   key: string;
   kind: string;
   label: string;
   path: string | null;
   start_line: number | null;
   end_line: number | null;
-  attrs: Record<string, unknown>;
 }
 
-export interface GraphEdge {
+export interface ViewNode extends NodeInfo {
+  files?: number;
+  languages?: Record<string, number>;
+  focus?: boolean;
+  is_route_handler?: boolean;
+}
+
+export interface ViewEdge {
   source: string;
   target: string;
   kind: string;
-  resolution: string;
-  evidence_id: string | null;
+  resolution: Resolution;
   count: number;
+  evidence_id: string | null;
+  via?: string | null;
 }
 
-export interface Graph {
+export interface GraphView {
   view: string;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  nodes: ViewNode[];
+  edges: ViewEdge[];
   truncated: boolean;
-  totals: Record<string, number>;
+}
+
+export interface Related extends NodeInfo {
+  relation?: string;
+  resolution?: string;
+  via?: string | null;
+  evidence_id?: string | null;
+  call_line?: number | null;
+  depth?: number;
+  callee_text?: string;
+}
+
+export interface Usage {
+  definition: NodeInfo & { evidence_id: string | null };
+  direct_references: Related[];
+  importing_files: Related[];
+  direct_callees: Related[];
+  related_routes: Related[];
+  upstream_transitive: Related[];
+  downstream_transitive: Related[];
+  possible_dynamic_references: Related[];
+  notes: string[];
 }
 
 export interface Impact {
   key: string;
-  dependents: { key: string; kind: string | null; label: string | null; depth: number; via: string }[];
+  direct_dependents: Related[];
+  transitive_dependents: Related[];
+  potentially_affected_routes: Related[];
+  related_tests: string[];
+  unresolved_references: Related[];
+  limitations: string[];
   truncated: boolean;
-  note: string;
+}
+
+export interface EntryPoint {
+  kind: string;
+  label: string;
+  framework?: string;
+  start_key: string | null;
+  handler_key?: string | null;
+  evidence_id: string | null;
+  traceable: boolean;
+  line_range?: [number | null, number | null];
+}
+
+export interface FlowStep {
+  index: number;
+  parent: number | null;
+  depth: number;
+  from: string;
+  to: NodeInfo;
+  edge_kind: string;
+  resolution: Resolution;
+  via: string | null;
+  callee_text: string | null;
+  call_line: number | null;
+  evidence_id: string | null;
+  cycle: boolean;
+  certainty: "direct" | "possible";
+  leaf_reason: string | null;
+}
+
+export interface Flow {
+  start: NodeInfo;
+  steps: FlowStep[];
+  truncated: boolean;
+  stats: Record<string, number>;
+  semantics: string;
+}
+
+export interface RetrievalResult {
+  kind: "symbol" | "file" | "text";
+  key: string;
+  label: string;
+  path: string;
+  start_line: number;
+  end_line: number;
+  evidence_id: string | null;
+  symbol_kind?: string;
+  signature?: string;
+  snippet?: string;
+  score: number;
+  signals: string[];
 }
 
 export interface Finding {
@@ -219,33 +328,21 @@ export interface Dependency {
 
 export interface EvidenceDetail {
   id: string;
-  repository_id: number;
-  snapshot_id: number;
-  commit_sha: string;
   path: string;
   start_line: number;
   end_line: number;
   category: string;
   subject: string | null;
-  extraction_method: string;
-  analyzer_version: string;
-  contract_version: string;
-  verification_status: string;
   source_kind: string;
-  limitations: string[];
+  extraction_method: string;
+  verification_status: string;
   verified_now: boolean;
   verification_reason: string | null;
+  commit_sha: string;
   excerpt: string | null;
 }
 
-export type Basis =
-  | "source_evidence"
-  | "configuration_evidence"
-  | "documentation_claim"
-  | "inventory_measured"
-  | "heuristic"
-  | "unknown"
-  | "unsupported";
+export type Basis = "source_evidence" | "configuration_evidence" | "documentation_claim" | "inventory_measured" | "heuristic" | "unknown" | "unsupported";
 
 export interface Claim {
   statement: string;
@@ -267,16 +364,12 @@ export interface EvidenceRef {
   category: string;
   source_kind: string;
   verification_status: string;
-  reason: string | null;
 }
 
 export interface ReportContent {
-  schema_version: string;
   kind: "deterministic" | "agent";
   repository: string;
-  canonical_url: string;
   commit_sha: string;
-  default_branch: string | null;
   generated_at: string;
   model: string | null;
   overview: Section[];
@@ -297,7 +390,6 @@ export interface ReportBrief {
   status: string;
   model: string | null;
   created_at: string;
-  error: string | null;
 }
 
 export interface Report extends ReportBrief {
@@ -318,54 +410,108 @@ export interface AgentStatus {
 
 export interface AgentModel {
   id: string;
-  provider_id: string;
-  model_id: string;
   name: string;
   family: string | null;
-  status: string | null;
   enabled: boolean;
   context_limit: number | null;
-  output_limit: number | null;
-  variants: string[];
 }
 
-const q = (params: Record<string, string | number | boolean | undefined | null>) => {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
-  const s = sp.toString();
-  return s ? `?${s}` : "";
-};
+export interface Message {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  status: "pending" | "complete" | "failed" | "cancelled";
+  job_id: number | null;
+  created_at: string;
+  payload: {
+    claims?: Claim[];
+    limitations?: string[];
+    grounding?: "grounded" | "partially_grounded" | "unsupported" | "insufficient_evidence";
+    insufficient_evidence?: boolean;
+    validation?: Record<string, unknown>;
+    model?: string;
+    intents?: string[];
+    usage?: { model_calls?: number; latency_ms?: number; gateway?: { requests: number } };
+    error?: string;
+  };
+}
+
+export interface Conversation {
+  id: number;
+  snapshot_id: number;
+  title: string;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  messages?: Message[];
+}
+
+export interface Comparison {
+  base: { id: number; commit_sha: string; analyzer_version: string };
+  head: { id: number; commit_sha: string; analyzer_version: string };
+  files: { added: string[]; removed: string[]; modified: { path: string; lines_before: number | null; lines_after: number | null }[]; counts: Record<string, number> };
+  symbols: {
+    added: { path: string; qualified_name: string; kind: string; start_line: number; end_line: number }[];
+    removed: { path: string; qualified_name: string; kind: string }[];
+    signature_changed: { path: string; qualified_name: string; signature_before: string | null; signature_after: string | null; start_line: number; end_line: number }[];
+    counts: Record<string, number>;
+  };
+  dependencies: { added: Dependency[]; removed: Dependency[]; changed: (Dependency & { specifier_before: string | null; status_before: string })[] };
+  routes: { added: { name: string; path: string; handler: string }[]; removed: { name: string; path: string; handler: string }[] };
+  graph: { edges_added: ViewEdge[]; edges_removed: ViewEdge[]; counts: Record<string, number> };
+  potential_impact: { unchanged_dependents_of_changed_code: (NodeInfo & { because_of: string; evidence_id: string | null })[]; count: number; note: string };
+  limitations: string[];
+}
 
 export const api = {
+  authStatus: () => request<{ auth_mode: string; authenticated: boolean; method: string | null }>("/api/auth/status"),
+  login: (token: string) => request<{ authenticated: boolean }>("/api/auth/login", { method: "POST", body: JSON.stringify({ token }) }),
+  logout: () => request<{ authenticated: boolean }>("/api/auth/logout", { method: "POST" }),
   health: () => request<{ status: string; version: string }>("/api/health"),
-  validateUrl: (url: string) =>
-    request<{ valid: boolean; canonical_url: string | null; error: string | null }>("/api/repositories/validate", {
-      method: "POST",
-      body: JSON.stringify({ url }),
-    }),
+  ready: () => request<{ worker_running: boolean; agent: Record<string, unknown> }>("/api/health/ready"),
+  validateUrl: (url: string) => request<{ valid: boolean; canonical_url: string | null; error: string | null }>("/api/repositories/validate", { method: "POST", body: JSON.stringify({ url }) }),
   createJob: (url: string) => request<{ job: Job; created: boolean }>("/api/jobs", { method: "POST", body: JSON.stringify({ url }) }),
-  jobs: (limit = 20) => request<Job[]>(`/api/jobs${q({ limit })}`),
+  jobs: (limit = 30) => request<Job[]>(`/api/jobs${q({ limit })}`),
   job: (id: number) => request<Job>(`/api/jobs/${id}`),
   cancelJob: (id: number) => request<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   repositories: () => request<Repository[]>("/api/repositories"),
+  refreshRepository: (id: number) => request<{ job: Job; created: boolean }>(`/api/repositories/${id}/refresh`, { method: "POST" }),
   snapshot: (id: number) => request<Snapshot>(`/api/snapshots/${id}`),
-  files: (id: number, p: { category?: string; analyzed?: boolean; q?: string; offset?: number; limit?: number }) =>
-    request<Page<FileRecord>>(`/api/snapshots/${id}/files${q(p)}`),
-  source: (id: number, path: string, start?: number, end?: number) =>
-    request<Source>(`/api/snapshots/${id}/source${q({ path, start, end })}`),
-  graph: (id: number, p: { view: "files" | "symbols"; path_prefix?: string; include_unresolved?: boolean; limit?: number }) =>
-    request<Graph>(`/api/snapshots/${id}/graph${q(p)}`),
-  impact: (id: number, key: string, depth = 3) => request<Impact>(`/api/snapshots/${id}/impact${q({ key, depth })}`),
+  tree: (id: number) => request<{ files: TreeFile[] }>(`/api/snapshots/${id}/tree`),
+  source: (id: number, path: string) => request<Source>(`/api/snapshots/${id}/source${q({ path })}`),
+  symbols: (id: number, p: { q?: string; path?: string; kind?: string; limit?: number }) => request<SymbolRow[]>(`/api/snapshots/${id}/symbols${q(p)}`),
   findings: (id: number, kind?: string) => request<Finding[]>(`/api/snapshots/${id}/findings${q({ kind })}`),
   dependencies: (id: number) => request<Dependency[]>(`/api/snapshots/${id}/dependencies`),
-  search: (id: number, query: string) => request<{ path: string; snippet: string; score: number }[]>(`/api/snapshots/${id}/search${q({ q: query })}`),
   evidence: (id: string) => request<EvidenceDetail>(`/api/evidence/${encodeURIComponent(id)}`),
-  reports: (snapshotId: number) => request<ReportBrief[]>(`/api/snapshots/${snapshotId}/reports`),
+  graphView: (id: number, p: { view: string; focus?: string; radius?: number; path_prefix?: string; limit?: number }) => request<GraphView>(`/api/snapshots/${id}/graph/view${q(p)}`),
+  usage: (id: number, key: string) => request<Usage>(`/api/snapshots/${id}/usage${q({ key })}`),
+  impact: (id: number, key: string) => request<Impact>(`/api/snapshots/${id}/impact${q({ key })}`),
+  entryPoints: (id: number) => request<EntryPoint[]>(`/api/snapshots/${id}/flows/entry-points`),
+  trace: (id: number, key: string, range?: [number | null, number | null]) =>
+    request<Flow>(`/api/snapshots/${id}/flows/trace${q({ key, line_start: range?.[0] ?? undefined, line_end: range?.[1] ?? undefined })}`),
+  retrieve: (id: number, query: string, limit = 12) => request<{ results: RetrievalResult[]; tokens: string[] }>(`/api/snapshots/${id}/retrieve${q({ q: query, limit })}`),
+  reports: (id: number) => request<ReportBrief[]>(`/api/snapshots/${id}/reports`),
   report: (id: number) => request<Report>(`/api/reports/${id}`),
-  reportMarkdownUrl: (id: number) => `${API_BASE}/api/reports/${id}/markdown`,
-  requestAgentReport: (snapshotId: number) =>
-    request<{ job: Job; created: boolean }>(`/api/snapshots/${snapshotId}/agent-report`, { method: "POST" }),
+  reportMarkdownUrl: (id: number) => `/api/reports/${id}/markdown`,
+  requestAgentReport: (id: number) => request<{ job: Job }>(`/api/snapshots/${id}/agent-report`, { method: "POST" }),
+  compare: (base: number, head: number) => request<Comparison>(`/api/compare${q({ base, head })}`),
+  conversations: (snapshotId: number) => request<Conversation[]>(`/api/snapshots/${snapshotId}/conversations`),
+  createConversation: (snapshotId: number, model?: string) => request<Conversation>(`/api/snapshots/${snapshotId}/conversations`, { method: "POST", body: JSON.stringify({ model }) }),
+  conversation: (id: number) => request<Conversation>(`/api/conversations/${id}`),
+  ask: (conversationId: number, content: string) =>
+    request<{ question_id: number; reply_id: number; job: Job }>(`/api/conversations/${conversationId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
   agentStatus: () => request<AgentStatus>("/api/agent/status"),
   agentModels: () => request<AgentModel[]>("/api/agent/models"),
   selectModel: (model: string) => request<AgentStatus>("/api/agent/model", { method: "PUT", body: JSON.stringify({ model }) }),
 };
+
+export interface RecentConversation extends Conversation {
+  repository: string;
+  commit_sha: string;
+  questions: number;
+}
+
+export const recentConversations = (limit = 8) => fetch(`/api/conversations?limit=${limit}`, { credentials: "same-origin", cache: "no-store" }).then(async (r) => {
+  if (!r.ok) throw new ApiError(r.status, "http_error", `${r.status}`);
+  return (await r.json()) as RecentConversation[];
+});

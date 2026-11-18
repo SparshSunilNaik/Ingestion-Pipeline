@@ -1,18 +1,25 @@
 "use client";
 
+import { Bot, KeyRound, Palette, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useAsync } from "@/lib/hooks";
-import { Badge, Button, Card, ErrorBox, Spinner } from "@/components/ui";
+import { useAsync, usePref } from "@/lib/hooks";
+import { SHORTCUTS } from "@/components/shell/app-shell";
+import { Badge, Button, EmptyState, ErrorState, IconButton, Kbd, Panel, Segmented, SkeletonRows, StatusDot } from "@/components/ui";
 
 export function SettingsView() {
+  const router = useRouter();
   const status = useAsync(() => api.agentStatus(), []);
   const models = useAsync(() => api.agentModels(), []);
+  const auth = useAsync(() => api.authStatus(), []);
+  const ready = useAsync(() => api.ready(), []);
+  const [theme, setTheme] = usePref("ip.theme", "dark");
   const [filter, setFilter] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
-
   const visible = useMemo(() => (models.data ?? []).filter((m) => m.id.toLowerCase().includes(filter.toLowerCase())), [models.data, filter]);
+  const s = status.data;
 
   async function select(id: string) {
     setSaving(id);
@@ -27,85 +34,91 @@ export function SettingsView() {
     }
   }
 
-  const s = status.data;
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Agent settings</h1>
-        <p className="text-sm text-muted">
-          The agent runs through OpenCode&apos;s stateless generation API without tool access. Repository evidence is supplied by the backend&apos;s read-only gateway.
-        </p>
-      </div>
-
-      <Card title="OpenCode runtime" actions={<Button variant="secondary" onClick={status.reload}>Refresh</Button>}>
-        {status.error ? <ErrorBox error={status.error} /> : null}
-        {!s && status.loading ? <Spinner /> : null}
-        {s ? (
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-xs text-muted">Mode</dt><dd>{s.mode}</dd></div>
-            <div><dt className="text-xs text-muted">Connection</dt><dd>{s.available ? <Badge tone="ok">connected</Badge> : <Badge tone="bad">unavailable</Badge>}</dd></div>
-            <div><dt className="text-xs text-muted">OpenCode version</dt><dd>{s.version ?? "—"}</dd></div>
-            <div><dt className="text-xs text-muted">Endpoint</dt><dd className="font-mono text-xs">{s.base_url ?? "—"}</dd></div>
-            <div><dt className="text-xs text-muted">Selected model</dt><dd className="font-mono text-xs">{s.selected_model}</dd></div>
-            <div>
-              <dt className="text-xs text-muted">Model available</dt>
-              <dd>{s.selected_model_available === null ? "unknown" : s.selected_model_available ? <Badge tone="ok">yes</Badge> : <Badge tone="bad">no</Badge>}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-xs text-muted">Agent availability</dt>
-              <dd>{s.agent_ready ? <Badge tone="ok">ready</Badge> : <Badge tone="warn">not ready</Badge>}</dd>
-            </div>
-            {s.error ? <div className="sm:col-span-2"><ErrorBox error={s.error} /></div> : null}
-          </dl>
-        ) : null}
-        <p className="mt-3 text-xs text-muted">Credentials are managed by OpenCode and are never sent to this application or shown here.</p>
-      </Card>
-
-      <Card title={`Available models${models.data ? ` (${models.data.length})` : ""}`}>
-        {models.error ? <ErrorBox error={models.error} /> : null}
-        {!models.data && models.loading ? <Spinner /> : null}
-        <ErrorBox error={saveError} />
-        {models.data ? (
-          <div className="space-y-3">
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter models"
-              className="w-full max-w-sm rounded-md border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-accent"
-            />
-            <div className="max-h-[28rem] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-surface text-left text-xs text-muted">
-                  <tr>
-                    <th className="pb-2 font-medium">Model ID</th>
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Context</th>
-                    <th className="pb-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((m) => (
-                    <tr key={m.id} className="border-t border-border">
-                      <td className="py-1.5 font-mono text-xs">{m.id}</td>
-                      <td className="py-1.5">{m.name} {!m.enabled ? <Badge tone="warn">disabled</Badge> : null}</td>
-                      <td className="py-1.5 tabular-nums text-muted">{m.context_limit ? `${Math.round(m.context_limit / 1000)}k` : "—"}</td>
-                      <td className="py-1.5 text-right">
-                        {s?.selected_model === m.id ? (
-                          <Badge tone="accent">selected</Badge>
-                        ) : (
-                          <Button variant="secondary" disabled={!m.enabled || saving !== null} onClick={() => void select(m.id)}>
-                            {saving === m.id ? "Saving…" : "Select"}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+    <div className="mx-auto grid max-w-[1300px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="flex min-w-0 flex-col gap-4">
+        <Panel title="OpenCode runtime" icon={<Bot className="h-3.5 w-3.5" />} actions={<IconButton label="Refresh status" onClick={status.reload}><RefreshCw className="h-3.5 w-3.5" /></IconButton>}>
+          {status.error ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
+          {!s && !status.error && <SkeletonRows rows={4} />}
+          {s && (
+            <dl className="grid gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-3">
+              <Field label="Connection"><StatusDot tone={s.available ? "ok" : "bad"} /> {s.available ? "connected" : "unavailable"}</Field>
+              <Field label="Mode">{s.mode}</Field>
+              <Field label="Version"><span className="font-mono">{s.version ?? "—"}</span></Field>
+              <Field label="Selected model"><span className="font-mono">{s.selected_model}</span></Field>
+              <Field label="Model available">{s.selected_model_available == null ? "unknown" : s.selected_model_available ? <Badge tone="ok">yes</Badge> : <Badge tone="bad">no</Badge>}</Field>
+              <Field label="Agent">{s.agent_ready ? <Badge tone="ok">ready</Badge> : <Badge tone="warn">not ready</Badge>}</Field>
+              {s.error && <div className="sm:col-span-3"><ErrorState error={s.error} compact /></div>}
+            </dl>
+          )}
+          <p className="mt-3 text-[11.5px] text-fg-3">
+            The agent uses OpenCode&apos;s stateless generation endpoint without any tools. All repository reads go through the backend&apos;s read-only evidence gateway.
+            Provider credentials stay inside OpenCode and are never shown here. Models are never switched automatically.
+          </p>
+        </Panel>
+        <Panel title={`Available models${models.data ? ` (${models.data.length})` : ""}`} bodyClassName="p-0">
+          <div className="border-b border-line p-2">
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter models" aria-label="Filter models" className="h-8 w-full max-w-sm rounded-md border border-line bg-panel-2 px-2.5 text-[12.5px] outline-none focus:border-accent" />
           </div>
-        ) : null}
-      </Card>
+          {models.error ? <div className="p-3"><ErrorState error={models.error} onRetry={models.reload} /></div> : null}
+          {saveError ? <div className="p-3"><ErrorState error={saveError} compact /></div> : null}
+          {!models.data && !models.error && <div className="p-3"><SkeletonRows /></div>}
+          {models.data && visible.length === 0 && <EmptyState title="No models match" />}
+          <div className="max-h-[480px] overflow-auto">
+            <table className="w-full text-[12.5px]">
+              <tbody className="divide-y divide-line">
+                {visible.map((m) => (
+                  <tr key={m.id} className="hover:bg-panel-2">
+                    <td className="px-3 py-1.5 font-mono text-[12px]">{m.id}</td>
+                    <td className="px-3 py-1.5 text-fg-2">{m.name} {!m.enabled && <Badge tone="warn">disabled</Badge>}</td>
+                    <td className="px-3 py-1.5 font-mono text-fg-3">{m.context_limit ? `${Math.round(m.context_limit / 1000)}k ctx` : ""}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      {s?.selected_model === m.id ? (
+                        <Badge tone="accent">selected</Badge>
+                      ) : (
+                        <Button size="sm" disabled={!m.enabled || saving !== null} onClick={() => select(m.id)} aria-label={`Select ${m.id}`}>
+                          {saving === m.id ? "Saving…" : "Select"}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        <Panel title="Session & security" icon={<KeyRound className="h-3.5 w-3.5" />}>
+          <dl className="space-y-2 text-[12.5px]">
+            <Field label="Authentication">{auth.data ? `${auth.data.auth_mode} · ${auth.data.method ?? "—"}` : "…"}</Field>
+            <Field label="Worker">{ready.data ? <><StatusDot tone={ready.data.worker_running ? "ok" : "bad"} /> {String(ready.data.agent.worker_mode ?? "")} · {ready.data.worker_running ? "running" : "not running"}</> : "…"}</Field>
+          </dl>
+          <Button className="mt-3" onClick={() => api.logout().finally(() => router.replace("/login"))}>Sign out</Button>
+        </Panel>
+        <Panel title="Appearance" icon={<Palette className="h-3.5 w-3.5" />}>
+          <Segmented label="Theme" value={theme === "light" ? "light" : "dark"} onChange={setTheme} options={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} />
+        </Panel>
+        <Panel title="Keyboard shortcuts">
+          <dl className="space-y-2 text-[12.5px]">
+            {SHORTCUTS.map(([k, d]) => (
+              <div key={k} className="flex items-center justify-between gap-3">
+                <dt className="text-fg-2">{d}</dt>
+                <dd className="flex shrink-0 gap-1">{k.split(" ").map((p) => <Kbd key={p}>{p}</Kbd>)}</dd>
+              </div>
+            ))}
+          </dl>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</dt>
+      <dd className="mt-0.5 flex items-center gap-1.5">{children}</dd>
     </div>
   );
 }

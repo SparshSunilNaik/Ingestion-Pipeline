@@ -1,21 +1,26 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/shell/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ingestion-Pipeline",
-  description: "Evidence-grounded repository intelligence",
+  title: "Ingestion-Pipeline · Repository Intelligence",
+  description: "Evidence-grounded repository intelligence workbench",
 };
+
+// Applies the stored theme before first paint (no flash). Defaults to dark.
+const THEME_SCRIPT = `try{var t=localStorage.getItem("ip.theme");document.documentElement.dataset.theme=t==="light"?"light":"dark"}catch(e){document.documentElement.dataset.theme="dark"}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="flex min-h-full flex-col">
-        <Suspense fallback={<div className="h-12 border-b border-border bg-surface" />}>
-          <Nav />
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body className="h-full overflow-hidden">
+        <Suspense fallback={<div className="h-full bg-bg" />}>
+          <AppShell>{children}</AppShell>
         </Suspense>
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
       </body>
     </html>
   );

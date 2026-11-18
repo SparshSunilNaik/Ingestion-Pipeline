@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents.service import selected_model
@@ -345,3 +345,22 @@ def ask(conversation_id: int, body: QuestionIn, db: Session = Depends(get_db), r
         c.title = body.content.strip()[:120]
     db.commit()
     return {"question_id": q.id, "reply_id": reply.id, "job": JobOut.model_validate(db.get(Job, job.id)).model_dump(mode="json")}
+
+
+@router.get("/conversations", tags=["qa"])
+def recent_conversations(limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Recent investigations across repositories (for the dashboard)."""
+    from app.database.models import Snapshot
+
+    rows = db.execute(
+        select(Conversation, Snapshot, Repository)
+        .join(Snapshot, Snapshot.id == Conversation.snapshot_id)
+        .join(Repository, Repository.id == Snapshot.repository_id)
+        .order_by(Conversation.updated_at.desc())
+        .limit(limit)
+    ).all()
+    out = []
+    for c, snap, repo in rows:
+        n = db.scalar(select(func.count()).select_from(Message).where(Message.conversation_id == c.id, Message.role == "user")) or 0
+        out.append({**_conversation_out(db, c), "repository": f"{repo.owner}/{repo.name}", "commit_sha": snap.commit_sha, "questions": n})
+    return out

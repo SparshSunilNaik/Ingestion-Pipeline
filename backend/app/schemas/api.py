@@ -87,6 +87,7 @@ class RepositoryDetailOut(RepositoryOut):
     snapshots: list[SnapshotBrief]
     current: SnapshotBrief | None = None
     latest_job: JobOut | None = None
+    current_summary: dict[str, Any] | None = None
 
 
 class SnapshotOut(ORM):

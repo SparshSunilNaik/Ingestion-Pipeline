@@ -1,111 +1,188 @@
 "use client";
 
+import { Activity, Bot, Clock, Library, MessagesSquare, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { api } from "@/lib/api";
-import { useAsync } from "@/lib/hooks";
-import { Badge, Button, Card, Empty, ErrorBox, ShortSha, Spinner, StatusBadge, TextLink, formatTime } from "@/components/ui";
+import { useState } from "react";
+import { api, recentConversations, type Repository } from "@/lib/api";
+import { useAsync, useNow } from "@/lib/hooks";
+import { SubmitRepository } from "@/components/submit-repository";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  LanguageBar,
+  Metric,
+  Panel,
+  ShortSha,
+  SkeletonRows,
+  StatusBadge,
+  StatusDot,
+  formatBytes,
+  formatTime,
+  timeAgo,
+} from "@/components/ui";
 
 export function DashboardView() {
-  const repos = useAsync(() => api.repositories(), [], 5000);
-  const jobs = useAsync(() => api.jobs(15), [], 3000);
+  const repos = useAsync(() => api.repositories(), [], 8000);
+  const jobs = useAsync(() => api.jobs(40), [], 4000);
   const agent = useAsync(() => api.agentStatus(), []);
+  const convs = useAsync(() => recentConversations(8), []);
+  const now = useNow();
+
+  const allJobs = jobs.data ?? [];
+  const running = allJobs.filter((j) => j.status === "running" || j.status === "queued").length;
+  const failed = allJobs.filter((j) => j.status === "failed");
+  const snapshots = (repos.data ?? []).reduce((a, r) => a + r.snapshots.filter((s) => s.status === "ready").length, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-muted">Analysed repositories, recent jobs and agent availability.</p>
+    <div className="mx-auto flex max-w-[1500px] flex-col gap-4 p-4">
+      <div className="grid grid-cols-2 gap-4 rounded-lg border border-line bg-panel px-4 py-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Metric label="Repositories" value={repos.data ? repos.data.length : "—"} />
+        <Metric label="Analysed snapshots" value={repos.data ? snapshots : "—"} />
+        <Metric label="Jobs in progress" value={jobs.data ? running : "—"} tone={running ? "ok" : undefined} />
+        <Metric label="Failed (last 40 jobs)" value={jobs.data ? failed.length : "—"} tone={failed.length ? "bad" : undefined} />
+        <div className="min-w-0">
+          <div className="text-[11px] tracking-wide text-fg-3 uppercase">Agent</div>
+          <div className="mt-1 flex items-center gap-1.5 text-[12.5px]">
+            <StatusDot tone={!agent.data ? "neutral" : agent.data.agent_ready ? "ok" : "warn"} />
+            {agent.data ? (agent.data.agent_ready ? <span className="truncate font-mono">{agent.data.selected_model}</span> : <span className="text-warn">unavailable</span>) : "…"}
+          </div>
         </div>
-        <Link href="/submit">
-          <Button>Analyze a repository</Button>
-        </Link>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card title="Repositories" className="lg:col-span-2">
-          {repos.error ? <ErrorBox error={repos.error} /> : null}
-          {!repos.data && repos.loading ? <Spinner /> : null}
-          {repos.data && repos.data.length === 0 ? <Empty>No repositories analysed yet.</Empty> : null}
-          {repos.data && repos.data.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs text-muted">
-                <tr>
-                  <th className="pb-2 font-medium">Repository</th>
-                  <th className="pb-2 font-medium">Current snapshot</th>
-                  <th className="pb-2 font-medium">Snapshots</th>
-                  <th className="pb-2 font-medium">Latest job</th>
-                </tr>
-              </thead>
-              <tbody>
-                {repos.data.map((r) => (
-                  <tr key={r.id} className="border-t border-border">
-                    <td className="py-2">
-                      {r.current ? <TextLink href={`/snapshots/${r.current.id}`}>{`${r.owner}/${r.name}`}</TextLink> : `${r.owner}/${r.name}`}
-                    </td>
-                    <td className="py-2">{r.current ? <ShortSha sha={r.current.commit_sha} /> : <span className="text-muted">none</span>}</td>
-                    <td className="py-2 tabular-nums">{r.snapshots.length}</td>
-                    <td className="py-2">{r.latest_job ? <Link href={`/jobs/${r.latest_job.id}`}><StatusBadge status={r.latest_job.status} /></Link> : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-        </Card>
-
-        <Card title="Agent runtime" actions={<TextLink href="/settings">Settings</TextLink>}>
-          {agent.error ? <ErrorBox error={agent.error} /> : null}
-          {!agent.data && agent.loading ? <Spinner /> : null}
-          {agent.data ? (
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-muted">OpenCode</dt>
-                <dd>{agent.data.available ? <Badge tone="ok">connected {agent.data.version}</Badge> : <Badge tone="bad">unavailable</Badge>}</dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-muted">Model</dt>
-                <dd className="truncate font-mono text-xs">{agent.data.selected_model}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-muted">Agent ready</dt>
-                <dd>{agent.data.agent_ready ? <Badge tone="ok">yes</Badge> : <Badge tone="warn">no</Badge>}</dd>
-              </div>
-              {agent.data.error ? <p className="text-xs text-bad">{agent.data.error}</p> : null}
-            </dl>
-          ) : null}
-        </Card>
-      </div>
-
-      <Card title="Recent jobs">
-        {jobs.error ? <ErrorBox error={jobs.error} /> : null}
-        {jobs.data && jobs.data.length === 0 ? <Empty>No jobs yet.</Empty> : null}
-        {jobs.data && jobs.data.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted">
-              <tr>
-                <th className="pb-2 font-medium">#</th>
-                <th className="pb-2 font-medium">Kind</th>
-                <th className="pb-2 font-medium">Target</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Stage</th>
-                <th className="pb-2 font-medium">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.data.map((j) => (
-                <tr key={j.id} className="border-t border-border">
-                  <td className="py-2"><TextLink href={`/jobs/${j.id}`}>{j.id}</TextLink></td>
-                  <td className="py-2">{j.kind === "ingest" ? "ingestion" : "agent report"}</td>
-                  <td className="max-w-xs truncate py-2 text-muted">{j.requested_url || `snapshot ${j.snapshot_id}`}</td>
-                  <td className="py-2"><StatusBadge status={j.status} /> {j.reused_cache ? <Badge>cached</Badge> : null}</td>
-                  <td className="py-2 text-muted">{j.stage}</td>
-                  <td className="py-2 text-muted">{formatTime(j.created_at)}</td>
-                </tr>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel title="Analyse a repository" icon={<Activity className="h-3.5 w-3.5" />}>
+            <SubmitRepository />
+          </Panel>
+          <Panel title="Repositories" icon={<Library className="h-3.5 w-3.5" />} actions={<Link href="/repositories" className="text-[12px] text-accent hover:underline">All repositories</Link>} bodyClassName="p-0">
+            {repos.error ? <div className="p-3"><ErrorState error={repos.error} onRetry={repos.reload} /></div> : null}
+            {!repos.data && !repos.error && <div className="p-3"><SkeletonRows rows={5} /></div>}
+            {repos.data && repos.data.length === 0 && <EmptyState icon={<Library className="h-6 w-6" />} title="No repositories analysed yet">Paste a public GitHub URL above to start your first analysis.</EmptyState>}
+            {repos.data && repos.data.length > 0 && <RepoTable repos={repos.data.slice(0, 8)} now={now} onChanged={repos.reload} />}
+          </Panel>
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel title="Recent analyses" icon={<Clock className="h-3.5 w-3.5" />} actions={<Link href="/jobs" className="text-[12px] text-accent hover:underline">All jobs</Link>} bodyClassName="p-0">
+            {!jobs.data && <div className="p-3"><SkeletonRows rows={6} /></div>}
+            {jobs.data && allJobs.length === 0 && <EmptyState title="No jobs yet" />}
+            <ul className="divide-y divide-line">
+              {allJobs.slice(0, 9).map((j) => (
+                <li key={j.id}>
+                  <Link href={`/jobs/${j.id}`} className="flex items-center gap-2.5 px-3 py-2 hover:bg-panel-2">
+                    <StatusBadge status={j.status} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px]">{j.kind === "ingest" ? j.requested_url.replace("https://github.com/", "") : `${j.kind === "qa" ? "Question" : "Agent report"} · snapshot ${j.snapshot_id}`}</div>
+                      <div className="truncate text-[11.5px] text-fg-3">{j.status === "failed" ? <span className="text-bad">{j.error_code}: {j.error_message}</span> : `${j.stage}${j.reused_cache ? " · cached" : ""}`}</div>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-fg-3">{now ? timeAgo(j.created_at, now) : formatTime(j.created_at)}</span>
+                  </Link>
+                </li>
               ))}
-            </tbody>
-          </table>
-        ) : null}
-      </Card>
+            </ul>
+          </Panel>
+          <Panel title="Recent investigations" icon={<MessagesSquare className="h-3.5 w-3.5" />} bodyClassName="p-0">
+            {convs.error ? <div className="p-3"><ErrorState error={convs.error} compact /></div> : null}
+            {convs.data && convs.data.length === 0 && <EmptyState icon={<Bot className="h-5 w-5" />} title="No investigations yet">Open a repository and ask a question in the Investigate view.</EmptyState>}
+            <ul className="divide-y divide-line">
+              {(convs.data ?? []).map((c) => (
+                <li key={c.id}>
+                  <Link href={`/snapshots/${c.snapshot_id}?view=investigate&c=${c.id}`} className="block px-3 py-2 hover:bg-panel-2">
+                    <div className="truncate text-[12.5px]">{c.title}</div>
+                    <div className="flex items-center gap-2 text-[11.5px] text-fg-3">
+                      <span className="truncate">{c.repository}</span>
+                      <ShortSha sha={c.commit_sha} />
+                      <span>{c.questions} question{c.questions === 1 ? "" : "s"}</span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function RepoTable({ repos, now, onChanged }: { repos: Repository[]; now: number; onChanged: () => void }) {
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  async function refresh(id: number) {
+    setBusy(id);
+    setError(null);
+    try {
+      await api.refreshRepository(id);
+      onChanged();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <div className="overflow-x-auto">
+      {error ? <div className="p-3"><ErrorState error={error} compact /></div> : null}
+      <table className="w-full text-[12.5px]">
+        <thead className="text-left text-[11px] tracking-wide text-fg-3 uppercase">
+          <tr className="border-b border-line">
+            <th className="px-3 py-2 font-medium">Repository</th>
+            <th className="w-[26%] px-3 py-2 font-medium">Languages</th>
+            <th className="px-3 py-2 font-medium">Coverage</th>
+            <th className="px-3 py-2 font-medium">Commit</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2" />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {repos.map((r) => {
+            const s = r.current_summary;
+            const job = r.latest_job;
+            const active = job && (job.status === "running" || job.status === "queued");
+            return (
+              <tr key={r.id} className="hover:bg-panel-2">
+                <td className="px-3 py-2">
+                  {r.current ? (
+                    <Link href={`/snapshots/${r.current.id}`} className="font-medium hover:text-accent">
+                      {r.owner}/{r.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{r.owner}/{r.name}</span>
+                  )}
+                  <div className="text-[11.5px] text-fg-3">{r.current ? `analysed ${now ? timeAgo(r.current.acquired_at, now) : formatTime(r.current.acquired_at)}` : "no successful analysis"}</div>
+                </td>
+                <td className="px-3 py-2">{s ? <LanguageBar data={s.languages_by_bytes} height={5} /> : <span className="text-fg-3">—</span>}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {s ? (
+                    <>
+                      <span className="font-mono tabular-nums">{s.analyzed_files}/{s.tracked_files}</span> <span className="text-fg-3">files · {formatBytes(s.total_bytes)}</span>
+                      {s.is_partial && <Badge tone="warn" className="ml-1.5">partial</Badge>}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-3 py-2">{r.current ? <ShortSha sha={r.current.commit_sha} /> : "—"}</td>
+                <td className="px-3 py-2">
+                  {job ? (
+                    <Link href={`/jobs/${job.id}`} title={job.error_message ?? undefined}>
+                      <StatusBadge status={job.status} />
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Button size="sm" variant="ghost" disabled={!!active || busy === r.id} onClick={() => refresh(r.id)} title="Re-check the remote HEAD and analyse if it changed">
+                    <RefreshCw className={`h-3.5 w-3.5 ${busy === r.id || active ? "animate-spin" : ""}`} aria-hidden /> Refresh
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

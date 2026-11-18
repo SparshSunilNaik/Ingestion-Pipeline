@@ -1,0 +1,234 @@
+"use client";
+
+import {
+  Bot,
+  Boxes,
+  Clock,
+  FileCode,
+  GitBranch,
+  Keyboard,
+  LayoutDashboard,
+  Library,
+  LogOut,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Settings,
+  Sun,
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { api, setUnauthorizedHandler } from "@/lib/api";
+import { useAsync, useHotkey, usePref } from "@/lib/hooks";
+import { CommandPalette } from "@/components/shell/command-palette";
+import { Badge, IconButton, Kbd, ShortSha, StatusDot, cn, jobTone } from "@/components/ui";
+
+const NAV = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, match: (p: string) => p === "/" },
+  { href: "/repositories", label: "Repositories", icon: Library, match: (p: string) => p.startsWith("/repositories") },
+  { href: "/jobs", label: "Recent analyses", icon: Clock, match: (p: string) => p.startsWith("/jobs") },
+  { href: "/workspace", label: "Intelligence workspace", icon: Boxes, match: (p: string) => p.startsWith("/snapshots") || p === "/workspace" },
+  { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
+];
+
+export const SHORTCUTS: [string, string][] = [
+  ["Ctrl K", "Command palette / search"],
+  ["Ctrl B", "Toggle sidebar"],
+  ["Alt 1–6", "Workspace: Overview, Code, Architecture, Investigate, Report, Compare"],
+  ["/", "Focus the file filter (Code view)"],
+  ["?", "Show keyboard shortcuts"],
+  ["Esc", "Close dialogs"],
+];
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const search = useSearchParams();
+  const [collapsed, setCollapsed] = usePref("ip.sidebar", "open");
+  const [theme, setTheme] = usePref("ip.theme", "dark");
+  const [lastSnapshot] = usePref("ip.lastSnapshot", "");
+  const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
+  const isLogin = pathname.startsWith("/login");
+  const auth = useAsync(() => (isLogin ? Promise.resolve(null) : api.authStatus()), [isLogin]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+  }, [theme]);
+
+  const toLogin = useCallback(() => {
+    if (!window.location.pathname.startsWith("/login")) {
+      router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    }
+  }, [router]);
+  useEffect(() => {
+    setUnauthorizedHandler(toLogin);
+    return () => setUnauthorizedHandler(null);
+  }, [toLogin]);
+  const unauthenticated = auth.data && !auth.data.authenticated;
+  useEffect(() => {
+    if (unauthenticated) toLogin();
+  }, [unauthenticated, toLogin]);
+
+  useHotkey("mod+k", () => setPalette((v) => !v), { allowInInputs: true });
+  useHotkey("mod+b", () => setCollapsed(collapsed === "open" ? "closed" : "open"), { allowInInputs: true });
+  useHotkey("?", () => setHelp((v) => !v));
+  useHotkey("escape", () => {
+    setPalette(false);
+    setHelp(false);
+  }, { allowInInputs: true });
+
+  if (isLogin) return <>{children}</>;
+  const open = collapsed === "open";
+  const snapshotMatch = pathname.match(/^\/snapshots\/(\d+)/);
+  const activeSnapshot = snapshotMatch ? Number(snapshotMatch[1]) : lastSnapshot ? Number(lastSnapshot) : null;
+
+  return (
+    <div className="flex h-full">
+      <aside className={cn("flex shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-150", open ? "w-[220px]" : "w-[52px]")} aria-label="Primary">
+        <div className="flex h-11 items-center gap-2 border-b border-line px-3">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+            <GitBranch className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          {open && <span className="truncate text-[13px] font-semibold tracking-tight">Ingestion-Pipeline</span>}
+        </div>
+        <nav className="flex flex-col gap-0.5 p-2">
+          {NAV.map((n) => {
+            const active = n.match(pathname);
+            const href = n.href === "/workspace" && activeSnapshot ? `/snapshots/${activeSnapshot}` : n.href;
+            return (
+              <Link
+                key={n.href}
+                href={href}
+                title={open ? undefined : n.label}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors",
+                  active ? "bg-accent-soft text-accent" : "text-fg-2 hover:bg-panel-3 hover:text-fg",
+                )}
+              >
+                <n.icon className="h-4 w-4 shrink-0" aria-hidden />
+                {open && <span className="truncate">{n.label}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+        {open && activeSnapshot ? <ActiveRepository snapshotId={activeSnapshot} /> : null}
+        <div className="mt-auto flex flex-col gap-1 border-t border-line p-2">
+          <div className={cn("flex items-center", open ? "justify-between" : "flex-col gap-1")}>
+            <IconButton label={open ? "Collapse sidebar (Ctrl+B)" : "Expand sidebar (Ctrl+B)"} onClick={() => setCollapsed(open ? "closed" : "open")}>
+              {open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+            </IconButton>
+            <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+              {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            </IconButton>
+            <IconButton label="Keyboard shortcuts (?)" onClick={() => setHelp(true)}>
+              <Keyboard className="h-4 w-4" />
+            </IconButton>
+            <IconButton
+              label="Sign out"
+              onClick={() => api.logout().finally(() => router.replace("/login"))}
+            >
+              <LogOut className="h-4 w-4" />
+            </IconButton>
+          </div>
+        </div>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar snapshotId={snapshotMatch ? Number(snapshotMatch[1]) : null} view={search.get("view")} onSearch={() => setPalette(true)} />
+        <main className="min-h-0 flex-1 overflow-auto">{auth.data?.authenticated === false ? null : children}</main>
+      </div>
+      {palette && <CommandPalette snapshotId={activeSnapshot} onClose={() => setPalette(false)} />}
+      {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
+    </div>
+  );
+}
+
+function ActiveRepository({ snapshotId }: { snapshotId: number }) {
+  const snap = useAsync(() => api.snapshot(snapshotId).catch(() => null), [snapshotId]);
+  const s = snap.data;
+  if (!s) return null;
+  return (
+    <div className="mx-2 mt-2 rounded-md border border-line bg-panel-2 p-2.5">
+      <div className="text-[10.5px] tracking-wider text-fg-3 uppercase">Active repository</div>
+      <Link href={`/snapshots/${s.id}`} className="mt-1 block truncate text-[12.5px] font-medium hover:text-accent">
+        {s.repository.owner}/{s.repository.name}
+      </Link>
+      <div className="mt-1 flex items-center gap-1.5">
+        <ShortSha sha={s.commit_sha} />
+        <Badge tone={jobTone(s.status)}>{s.status}</Badge>
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ snapshotId, view, onSearch }: { snapshotId: number | null; view: string | null; onSearch: () => void }) {
+  const snap = useAsync(() => (snapshotId ? api.snapshot(snapshotId) : Promise.resolve(null)), [snapshotId]);
+  const agent = useAsync(() => api.agentStatus().catch(() => null), [], 60_000);
+  const s = snap.data;
+  const a = agent.data;
+  return (
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        {s ? (
+          <>
+            <Link href={`/snapshots/${s.id}`} className="truncate text-[13.5px] font-semibold hover:text-accent">
+              {s.repository.owner}/<span className="text-fg">{s.repository.name}</span>
+            </Link>
+            <span className="inline-flex items-center gap-1 text-[12px] text-fg-3">
+              <GitBranch className="h-3.5 w-3.5" aria-hidden />
+              {s.default_branch ?? "unknown"}
+            </span>
+            <ShortSha sha={s.commit_sha} />
+            <Badge tone={jobTone(s.status)}>{s.status}</Badge>
+            {s.coverage.is_partial && <Badge tone="warn">partial coverage</Badge>}
+            <span className="hidden text-[11.5px] text-fg-3 xl:inline">analyzer {s.analyzer_version}</span>
+            {view && <span className="hidden text-[12px] text-fg-3 lg:inline">· {view}</span>}
+          </>
+        ) : (
+          <span className="flex items-center gap-2 text-[13px] text-fg-2">
+            <FileCode className="h-4 w-4 text-fg-3" aria-hidden /> Repository intelligence workbench
+          </span>
+        )}
+      </div>
+      <button
+        onClick={onSearch}
+        className="hidden h-7 w-64 shrink-0 items-center gap-2 rounded-md border border-line bg-panel-2 px-2 text-[12px] whitespace-nowrap text-fg-3 hover:border-line-strong md:flex"
+        aria-label="Open command palette"
+      >
+        <Search className="h-3.5 w-3.5" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-left">Search symbols, files, repos…</span>
+        <Kbd>Ctrl K</Kbd>
+      </button>
+      <Link href="/settings" className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-fg-2 hover:bg-panel-3" title={a?.error ?? undefined}>
+        <Bot className="h-3.5 w-3.5" aria-hidden />
+        <StatusDot tone={!a ? "neutral" : a.agent_ready ? "ok" : "warn"} />
+        <span className="hidden max-w-[180px] truncate font-mono text-[11.5px] sm:inline">{a ? a.selected_model : "agent"}</span>
+      </Link>
+    </header>
+  );
+}
+
+function ShortcutsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]" onClick={onClose}>
+      <div role="dialog" aria-label="Keyboard shortcuts" aria-modal className="w-[420px] rounded-lg border border-line bg-panel p-4 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-3 text-[13px] font-semibold">Keyboard shortcuts</h2>
+        <dl className="space-y-2 text-[12.5px]">
+          {SHORTCUTS.map(([k, d]) => (
+            <div key={k} className="flex items-center justify-between gap-4">
+              <dt className="text-fg-2">{d}</dt>
+              <dd className="flex gap-1">
+                {k.split(" ").map((p) => (
+                  <Kbd key={p}>{p}</Kbd>
+                ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
+}

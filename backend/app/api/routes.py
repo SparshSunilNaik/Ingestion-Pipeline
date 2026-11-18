@@ -134,7 +134,21 @@ def _repo_detail(db: Session, repo: Repository) -> s.RepositoryDetailOut:
     current = next((x for x in snaps if x.id == repo.current_snapshot_id), None)
     latest = db.scalar(select(Job).where(Job.repository_id == repo.id).order_by(Job.id.desc()).limit(1))
     base = s.RepositoryOut.model_validate(repo).model_dump()
-    return s.RepositoryDetailOut(**base, snapshots=snaps, current=current, latest_job=s.JobOut.model_validate(latest) if latest else None)
+    summary = None
+    cur = next((x for x in repo.snapshots if x.id == repo.current_snapshot_id), None)
+    if cur is not None:
+        inv, cov = cur.inventory_summary or {}, cur.coverage or {}
+        summary = {
+            "languages_by_bytes": dict(list((inv.get("languages_by_bytes") or {}).items())[:6]),
+            "tracked_files": cov.get("tracked_files"),
+            "analyzed_files": cov.get("analyzed_files"),
+            "total_bytes": inv.get("total_bytes"),
+            "is_partial": cov.get("is_partial"),
+            "evidence_records": (cur.analysis_summary or {}).get("evidence_records"),
+        }
+    return s.RepositoryDetailOut(
+        **base, snapshots=snaps, current=current, latest_job=s.JobOut.model_validate(latest) if latest else None, current_summary=summary
+    )
 
 
 @router.get("/repositories/{repo_id}", response_model=s.RepositoryDetailOut, tags=["repositories"])

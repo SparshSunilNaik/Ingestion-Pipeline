@@ -30,3 +30,9 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
+
+# Playwright
+frontend/e2e/.data/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.next-e2e/
