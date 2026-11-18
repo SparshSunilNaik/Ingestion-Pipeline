@@ -36,6 +36,18 @@ def test_parse_action_variants() -> None:
         parse_action('{"action": "delete_everything"}')
 
 
+def test_parse_action_repairs_unbalanced_brackets() -> None:
+    from app.agents.workflow import repair_brackets
+
+    # Real failure observed with a live model: the `sections` array was never closed.
+    broken = '{"action":"final","report":{"sections":[{"title":"Purpose","claims":[{"statement":"x }] y","evidence_ids":[]}]}}}'
+    a = parse_action(broken)
+    assert a.action == "final" and a.report.sections[0].claims[0].statement == "x }] y"
+    assert repair_brackets('{"a":[1,2') == '{"a":[1,2]}'
+    assert repair_brackets('{"a":1}}') == '{"a":1}'
+    assert parse_action('{"action": "final", "report": {"sections": []}} trailing }').action == "final"
+
+
 def test_evidence_pack_is_bounded_and_cites_ids(session, pipeline, sample_remote) -> None:
     snap = ready_snapshot(session, pipeline)
     pack = build_evidence_pack(session, snap)

@@ -12,7 +12,6 @@ Loop (bounded):
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -52,7 +51,7 @@ class AgentClaim(BaseModel):
 
 class AgentSection(BaseModel):
     title: str
-    claims: list[AgentClaim] = Field(default_factory=list, max_length=15)
+    claims: list[AgentClaim] = Field(default_factory=list, max_length=10)
 
 
 class FinalReport(BaseModel):
@@ -114,7 +113,8 @@ or
 Allowed section titles: """
     + ", ".join(ALLOWED_SECTIONS)
     + """.
-Prefer concise, specific statements (1-2 sentences each). Use at most 8 claims per section."""
+Prefer concise, specific statements (1-2 sentences each). Use at most 6 claims per section and at most 4 evidence IDs per claim.
+Double-check that the JSON is complete and every bracket is closed."""
 )
 
 
@@ -188,29 +188,76 @@ def build_evidence_pack(session: Session, snapshot: Snapshot) -> dict:
     return pack
 
 
-_JSON_OBJ = re.compile(r"\{.*\}", re.S)
+_PAIRS = {"{": "}", "[": "]"}
+
+
+def repair_brackets(text: str) -> str:
+    """Conservatively balance JSON brackets outside of strings.
+
+    Inserts missing closers when a closer does not match the innermost open bracket
+    (but does match an outer one), drops closers that match nothing, and appends
+    closers left open at the end. The result is still parsed and fully validated.
+    """
+    out: list[str] = []
+    stack: list[str] = []
+    in_str = esc = False
+    for ch in text:
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in _PAIRS:
+            stack.append(_PAIRS[ch])
+        elif ch in "}]":
+            if ch not in stack:
+                continue  # stray closer
+            while stack and stack[-1] != ch:
+                out.append(stack.pop())
+            stack.pop()
+        out.append(ch)
+    out.extend(reversed(stack))
+    return "".join(out)
+
+
+def _first_object(raw: str) -> tuple[dict | None, str | None]:
+    decoder = json.JSONDecoder()
+    start = raw.find("{")
+    if start == -1:
+        return None, "no JSON object found"
+    try:
+        data, _ = decoder.raw_decode(raw, start)
+        return (data, None) if isinstance(data, dict) else (None, "top-level JSON value is not an object")
+    except json.JSONDecodeError as exc:
+        return None, f"{exc.msg} at character {exc.pos}"
 
 
 def parse_action(text: str) -> RequestAction | FinalAction:
+    """Parse the model output: first complete JSON object; tolerate fences/trailing text; repair brackets."""
     raw = text.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", raw)
+    data, error = _first_object(raw)
+    repaired = False
+    if data is None and "{" in raw:
+        data, _ = _first_object(repair_brackets(raw[raw.find("{") :]))
+        repaired = data is not None
+    if data is None:
+        raise AgentError(f"Model output is not valid JSON ({error})", details={"kind": "bad_output"})
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        m = _JSON_OBJ.search(raw)
-        if not m:
-            raise AgentError("Model output is not JSON", details={"kind": "bad_output"}) from None
-        try:
-            data = json.loads(m.group(0))
-        except json.JSONDecodeError as exc:
-            raise AgentError("Model output is not valid JSON", details={"kind": "bad_output"}) from exc
-    try:
-        return AgentAction.validate_python(data)
+        action = AgentAction.validate_python(data)
     except ValidationError as exc:
         raise AgentError(
-            f"Model output does not match the contract: {exc.error_count()} error(s)", details={"kind": "contract_violation", "errors": exc.errors()[:5]}
+            f"Model output does not match the contract: {exc.error_count()} error(s)",
+            details={"kind": "contract_violation", "errors": exc.errors()[:5]},
         ) from exc
+    if repaired:
+        log.info("model output required bracket repair")
+    return action
 
 
 def validate_report(session: Session, snapshot: Snapshot, report: FinalReport) -> tuple[list[Section], dict]:
@@ -301,7 +348,9 @@ class InvestigationWorkflow:
                 if retries < self.budget.max_format_retries:
                     retries += 1
                     usage["format_retries"] = retries
-                    transcript.append(f"Your previous reply was rejected: {exc.message}. Reply with exactly one JSON object following the OUTPUT contract.")
+                    transcript.append(
+                        f"Your previous reply was rejected: {exc.message}. Reply with exactly one complete, valid JSON object following the OUTPUT contract."
+                    )
                     continue
                 raise
             if isinstance(action, FinalAction):
