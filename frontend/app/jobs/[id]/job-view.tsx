@@ -114,7 +114,9 @@ export function JobView() {
 
       <ol className="space-y-0" aria-label="Analysis stages">
         {stages.map((s, i) => {
-          const done = i < idx;
+          // A cached commit skips everything after resolving the commit SHA.
+          const skipped = j.reused_cache && j.status === "succeeded" && s.id !== "queued" && s.id !== "resolving";
+          const done = i < idx && !skipped;
           const current = i === idx && active;
           const failedHere = failed && i === Math.min(idx, stages.length - 1);
           return (
@@ -131,7 +133,10 @@ export function JobView() {
                 {i < stages.length - 1 && <span className={cn("my-0.5 w-px flex-1", done ? "bg-ok/50" : "bg-line")} style={{ minHeight: 14 }} />}
               </div>
               <div className="pb-3">
-                <div className={cn("text-[13.5px]", current || failedHere ? "font-semibold text-fg" : done ? "text-fg-2" : "text-fg-3")}>{s.label}</div>
+                <div className={cn("text-[13.5px]", current || failedHere ? "font-semibold text-fg" : done ? "text-fg-2" : "text-fg-3")}>
+                  {s.label}
+                  {skipped && <span className="ml-2 text-[12px] text-fg-3">skipped — reused from cache</span>}
+                </div>
                 {(current || failedHere) && <div className="mt-0.5 text-[12.5px] text-fg-2">{current && j.message ? j.message : s.detail}</div>}
               </div>
             </li>

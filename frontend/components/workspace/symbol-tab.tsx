@@ -71,7 +71,7 @@ export function SymbolTab() {
         {!usage.data && !usage.error && <div className="p-4"><SkeletonRows rows={8} /></div>}
         {usage.data && section === "usage" && <UsageSection u={usage.data} />}
         {usage.data && section === "dependencies" && <DependenciesSection u={usage.data} />}
-        {section === "impact" && (impact.error ? <div className="p-4"><ErrorState error={impact.error} onRetry={impact.reload} /></div> : impact.data ? <ImpactSection rootKey={key} im={impact.data} /> : <div className="p-4"><SkeletonRows rows={8} /></div>)}
+        {section === "impact" && (impact.error ? <div className="p-4"><ErrorState error={impact.error} onRetry={impact.reload} /></div> : impact.data ? <ImpactSection rootKey={key} rootKind={kind} im={impact.data} /> : <div className="p-4"><SkeletonRows rows={8} /></div>)}
       </div>
     </div>
   );
@@ -120,10 +120,10 @@ function DependenciesSection({ u }: { u: Usage }) {
   );
 }
 
-function ImpactSection({ rootKey, im }: { rootKey: string; im: Impact }) {
+function ImpactSection({ rootKey, rootKind, im }: { rootKey: string; rootKind: string; im: Impact }) {
   const open = useOpen();
   const nav = useNav();
-  const graph = useMemo(() => impactGraph(rootKey, im), [rootKey, im]);
+  const graph = useMemo(() => impactGraph(rootKey, rootKind, im), [rootKey, rootKind, im]);
   return (
     <div className="@container">
     <div className="grid gap-0 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
@@ -159,10 +159,10 @@ function ImpactSection({ rootKey, im }: { rootKey: string; im: Impact }) {
 }
 
 /** Dependents graph: each reached node points at the node it was reached through (its dependency). */
-function impactGraph(rootKey: string, im: Impact): { nodes: ViewNode[]; edges: ViewEdge[] } {
+function impactGraph(rootKey: string, rootKind: string, im: Impact): { nodes: ViewNode[]; edges: ViewEdge[] } {
   const reached = [...im.direct_dependents, ...im.transitive_dependents].slice(0, 120);
   const nodes = new Map<string, ViewNode>();
-  nodes.set(rootKey, { key: rootKey, kind: rootKey.startsWith("file:") ? "file" : rootKey.startsWith("route:") ? "route" : "function", label: symbolLabel(rootKey), path: keyPath(rootKey), start_line: null, end_line: null, focus: true });
+  nodes.set(rootKey, { key: rootKey, kind: rootKind, label: symbolLabel(rootKey), path: keyPath(rootKey), start_line: null, end_line: null, focus: true });
   for (const r of reached) nodes.set(r.key, { key: r.key, kind: r.kind, label: r.label, path: r.path, start_line: r.start_line, end_line: r.end_line });
   const edges: ViewEdge[] = [];
   for (const r of reached) {

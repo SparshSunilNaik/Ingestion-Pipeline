@@ -57,8 +57,9 @@ export function ReportPanel({ snapshot: s }: { snapshot: Snapshot }) {
 
   const r = report.data;
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-[240px] shrink-0 flex-col border-r border-line bg-panel">
+    <div className="@container flex h-full min-h-0">
+      {/* The contents list appears only when the canvas is wide enough to keep the report readable. */}
+      <aside className="hidden w-[230px] shrink-0 flex-col border-r border-line bg-panel @3xl:flex">
         <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-line px-3 text-[11.5px] font-semibold tracking-wide text-fg-2 uppercase"><ScrollText className="h-3.5 w-3.5" /> Contents</div>
         {r ? <Toc report={r} /> : <div className="p-3"><SkeletonRows /></div>}
       </aside>

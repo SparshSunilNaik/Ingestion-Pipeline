@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCode, Workflow } from "lucide-react";
+import { Workflow } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type EntryPoint, type FlowStep, type ViewEdge, type ViewNode } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
@@ -97,30 +97,31 @@ function StepTree({ steps, hover, onHover }: { steps: FlowStep[]; hover: string 
           key={st.index}
           onMouseEnter={() => onHover(st.to.key)}
           onMouseLeave={() => onHover(null)}
-          className={cn("flex items-center gap-2 border-b border-line/50 py-1 pr-4 text-[12.5px]", hover === st.to.key ? "bg-panel-2" : "hover:bg-panel-2")}
-          style={{ paddingLeft: 16 + st.depth * 20 }}
+          className={cn("border-b border-line/50 py-1 pr-4 text-[12.5px]", hover === st.to.key ? "bg-panel-2" : "hover:bg-panel-2")}
+          style={{ paddingLeft: 16 + Math.min(st.depth, 8) * 18 }}
         >
-          <span className="w-6 shrink-0 text-right font-mono text-[11px] text-fg-3">{st.index + 1}</span>
-          <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: KIND_VAR[st.to.kind] ?? "var(--fg-3)" }} aria-hidden />
-          <button
-            className="min-w-0 truncate text-left font-mono text-[12px] hover:text-accent"
-            onClick={() => (st.to.path ? nav.openSource({ path: st.to.path, start: st.to.start_line, end: st.to.end_line, sym: st.to.key.startsWith("sym:") ? st.to.key : undefined }) : undefined)}
-            title={st.to.path ? `Open ${st.to.label} in ${st.to.path}` : st.to.label}
-          >
-            {st.to.label}
-          </button>
-          <span className="shrink-0 text-[11px] text-fg-3">
-            {st.edge_kind === "handled_by" ? "handled by" : "called"}
-            {st.call_line ? ` at line ${st.call_line}` : ""}
-          </span>
-          <ResolutionBadge resolution={st.resolution} via={st.via} />
-          {st.certainty === "possible" && <Badge title="One of several possible targets (dynamic dispatch)">possible</Badge>}
-          {st.cycle && <Badge tone="warn">cycle</Badge>}
-          {st.leaf_reason && st.leaf_reason !== "cycle" && <Badge tone={st.leaf_reason === "depth_limit" ? "warn" : "neutral"}>{st.leaf_reason.replaceAll("_", " ")}</Badge>}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="w-6 shrink-0 text-right font-mono text-[11px] text-fg-3">{st.index + 1}</span>
+            <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: KIND_VAR[st.to.kind] ?? "var(--fg-3)" }} aria-hidden />
+            <button
+              className="min-w-0 truncate text-left font-mono text-[12.5px] hover:text-accent disabled:hover:text-fg"
+              disabled={!st.to.path}
+              onClick={() => (st.to.path ? nav.openSource({ path: st.to.path, start: st.to.start_line, end: st.to.end_line, sym: st.to.key.startsWith("sym:") ? st.to.key : undefined }) : undefined)}
+              title={st.to.path ? `Open ${st.to.label} in ${st.to.path}` : `${st.to.label} (not in the analysed code)`}
+            >
+              {st.to.label || st.callee_text || st.to.key}
+            </button>
+            <span className="shrink-0 text-[11px] text-fg-3">
+              {st.edge_kind === "handled_by" ? "handles the route" : st.call_line ? `called at line ${st.call_line}` : "called"}
+            </span>
+          </div>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 pl-[42px]">
+            <ResolutionBadge resolution={st.resolution} via={st.via} />
+            {st.certainty === "possible" && <Badge title="One of several possible targets (dynamic dispatch)">possible</Badge>}
+            {st.cycle && <Badge tone="warn">cycle</Badge>}
+            {st.leaf_reason && st.leaf_reason !== "cycle" && <Badge tone={st.leaf_reason === "depth_limit" ? "warn" : "neutral"}>{st.leaf_reason.replaceAll("_", " ")}</Badge>}
             {st.evidence_id && <EvidenceChip id={st.evidence_id} />}
-            {st.to.path && <FileCode className="h-3 w-3 text-fg-3" aria-hidden />}
-          </span>
+          </div>
         </li>
       ))}
     </ol>

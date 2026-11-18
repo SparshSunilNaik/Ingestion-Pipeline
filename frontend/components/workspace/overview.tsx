@@ -64,12 +64,23 @@ export function Overview({ snapshot: s }: { snapshot: Snapshot }) {
         </header>
 
         <section aria-label="Where to start" className="grid gap-2 @2xl:grid-cols-3">
-          <StartCard
-            icon={<Play className="h-4 w-4" />}
-            title={firstEntry ? `Trace ${firstEntry.label}` : "Trace execution"}
-            text={firstEntry ? `Follow what happens from ${firstEntry.kind === "route" ? "this route" : "this entry point"}, step by step.` : "No entry point was detected; start a trace from any function instead."}
-            onClick={firstEntry?.start_key ? () => nav.openFlow(firstEntry.start_key as string) : () => nav.setView("code")}
-          />
+          {firstEntry?.start_key ? (
+            <StartCard
+              icon={<Play className="h-4 w-4" />}
+              title={`Trace ${firstEntry.label}`}
+              text={`Follow what happens from ${firstEntry.kind === "route" ? "this route" : "this entry point"}, step by step.`}
+              onClick={() => nav.openFlow(firstEntry.start_key as string)}
+            />
+          ) : topSymbol ? (
+            <StartCard
+              icon={<Play className="h-4 w-4" />}
+              title={`Trace ${topSymbol.label}`}
+              text="No route or main function was detected (often a library), so start from its most used code."
+              onClick={() => nav.openFlow(topSymbol.key)}
+            />
+          ) : (
+            <StartCard icon={<Play className="h-4 w-4" />} title="Browse the code" text="No entry point was detected. Open a file and use “Trace execution” on any function." onClick={() => nav.openGraph({ gview: "files" })} />
+          )}
           <StartCard icon={<Network className="h-4 w-4" />} title="Explore the architecture" text="Directories, files, calls and routes as an interactive graph." onClick={() => nav.openGraph()} />
           <StartCard
             icon={<MessagesSquare className="h-4 w-4" />}

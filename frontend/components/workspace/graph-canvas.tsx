@@ -77,6 +77,8 @@ function IpNode({ data }: NodeProps<Node<NodeData>>) {
 }
 
 const nodeTypes = { ip: IpNode };
+// Never fit below a legible zoom: large graphs are panned (minimap, controls) rather than shrunk to dots.
+const FIT = { padding: 0.15, maxZoom: 1.1, minZoom: 0.55, duration: 0 };
 
 function layout(nodes: ViewNode[], edges: ViewEdge[], direction: "LR" | "TB" | "RL") {
   const g = new dagre.graphlib.Graph();
@@ -149,7 +151,7 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
   useEffect(() => {
     if (!initialized) return;
     // Wait a frame so freshly laid-out nodes are measured before fitting.
-    const t = setTimeout(() => void rf.fitView({ padding: 0.15, maxZoom: 1.1, duration: 0 }), 60);
+    const t = setTimeout(() => void rf.fitView(FIT), 60);
     return () => clearTimeout(t);
   }, [initialized, fitKey, nodes.length, rf]);
 
@@ -169,6 +171,7 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
       onlyRenderVisibleElements
       proOptions={{ hideAttribution: true }}
       fitView
+      fitViewOptions={FIT}
     >
       <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
       <Controls showInteractive={false} position="bottom-left" />
