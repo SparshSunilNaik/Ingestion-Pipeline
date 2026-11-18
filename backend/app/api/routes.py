@@ -21,7 +21,7 @@ from app.ingestion.url import parse_github_url
 from app.schemas import api as s
 from app.search.fts import search as fts_search
 
-VERSION = "0.2.0"
+VERSION = "0.6.0"
 
 
 def require_auth(request: Request, db: Session = Depends(get_db)) -> str:

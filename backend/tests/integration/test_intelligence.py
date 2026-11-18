@@ -98,6 +98,9 @@ def test_hybrid_retrieval(session, bench_snapshot) -> None:
     top = res["results"][0]
     assert top["key"] == "sym:svc/core/tokens.py#issue_token" and "symbol_exact" in top["signals"] and top["evidence_id"]
     assert "issue_token" in res["tokens"] and "where" not in res["tokens"]
+    # A dotted name selects that exact symbol ahead of symbols matching only one part (here: Admin.label).
+    dotted = retrieve(session, bench_snapshot, idx, "Account.label")["results"][0]
+    assert dotted["key"] == "sym:svc/core/models.py#Account.label" and "qualified_exact" in dotted["signals"]
     only_files = retrieve(session, bench_snapshot, idx, "store", categories={"file"})
     assert only_files["results"] and all(r["kind"] == "file" for r in only_files["results"])
 

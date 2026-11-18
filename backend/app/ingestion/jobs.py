@@ -167,7 +167,7 @@ def finish_job(
     if error_code:
         job.error_code = error_code
         job.error_message = (error_message or "")[:4000]
-        job.stage = "failed" if status == "failed" else job.stage
+        # The stage keeps the last step reached, so the UI can show where a failure happened.
     if snapshot_id is not None:
         job.snapshot_id = snapshot_id
     if reused is not None:

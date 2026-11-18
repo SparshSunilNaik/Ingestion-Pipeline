@@ -34,6 +34,16 @@ if ($agent) {
     if ($agent.error) { Write-Host "        $($agent.error)" -ForegroundColor Yellow }
 }
 
+$repos = Get-Json "$ApiBase/api/repositories"
+if ($repos) {
+    Write-Host "[repos] $(@($repos).Count) repositories" -ForegroundColor Green
+    foreach ($repo in @($repos)) {
+        if ($repo.current) {
+            Write-Host ("        {0}/{1}  snapshot {2}  commit {3}  analyzer {4}  ({5} snapshots)" -f $repo.owner, $repo.name, $repo.current.id, $repo.current.commit_sha.Substring(0, 12), $repo.current.analyzer_version, @($repo.snapshots).Count)
+        }
+    }
+}
+
 try {
     $r = Invoke-WebRequest -Uri $FrontendUrl -TimeoutSec 15 -UseBasicParsing
     Write-Host "[ok]   frontend HTTP $($r.StatusCode) at $FrontendUrl" -ForegroundColor Green

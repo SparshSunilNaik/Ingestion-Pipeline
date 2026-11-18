@@ -38,6 +38,7 @@ if (-not $BackendOnly) {
     try {
         Invoke-Check "eslint" { npm run lint }
         Invoke-Check "tsc" { npx next typegen; npx tsc --noEmit }
+        Invoke-Check "vitest (components + axe)" { npm test }
         Invoke-Check "next build" { npm run build }
         if ($E2E) {
             $env:PW_CHANNEL = "msedge"

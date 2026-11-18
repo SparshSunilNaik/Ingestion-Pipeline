@@ -264,6 +264,11 @@ def usage(session: Session, idx: GraphIndex, key: str, depth: int = 3) -> dict[s
         for e in idx.out.get(key, [])
         if e.kind in ("calls", "inherits")
     ]
+    imports = []
+    if node.kind == "file":
+        for e in idx.out.get(key, []):
+            if e.kind in ("imports", "declares_dependency"):
+                imports.append({**idx.node_info(e.target), "relation": e.kind, "resolution": e.resolution, "evidence_id": e.evidence_id})
     seeds = [key, *_members(idx, key)]
     upstream = _bfs(idx, seeds, depth, ("calls", "inherits", "handled_by"), reverse=True)
     downstream = _bfs(idx, seeds, depth, ("calls", "inherits"), reverse=False)
@@ -278,6 +283,7 @@ def usage(session: Session, idx: GraphIndex, key: str, depth: int = 3) -> dict[s
         "definition": definition,
         "direct_references": direct,
         "importing_files": importers,
+        "imports": imports,
         "direct_callees": callees,
         "related_routes": routes,
         "upstream_transitive": [u for u in upstream if u["depth"] > 1],

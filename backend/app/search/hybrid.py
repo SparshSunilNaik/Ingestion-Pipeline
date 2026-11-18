@@ -70,7 +70,17 @@ _STOP = {
     "on",
     "if",
 }
-WEIGHTS = {"symbol_exact": 10.0, "symbol_prefix": 6.0, "symbol_contains": 3.0, "path": 4.0, "fts": 3.0, "graph_neighbour": 1.5, "centrality": 0.5}
+_DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+WEIGHTS = {
+    "qualified_exact": 16.0,
+    "symbol_exact": 10.0,
+    "symbol_prefix": 6.0,
+    "symbol_contains": 3.0,
+    "path": 4.0,
+    "fts": 3.0,
+    "graph_neighbour": 1.5,
+    "centrality": 0.5,
+}
 
 
 def tokens(query: str) -> list[str]:
@@ -88,6 +98,8 @@ def tokens(query: str) -> list[str]:
 def retrieve(session: Session, snapshot: Snapshot, idx: GraphIndex, query: str, limit: int = 15, categories: set[str] | None = None) -> dict[str, Any]:
     toks = tokens(query)
     raw_words = [w for w in _WORD.findall(query) if len(w) >= 3 and w.lower() not in _STOP]
+    # "Signer.get_signature" names one symbol exactly; it must outrank symbols matching only one part.
+    dotted = {d.lower() for d in _DOTTED.findall(query)}
     scores: dict[str, float] = defaultdict(float)
     signals: dict[str, list[str]] = defaultdict(list)
     items: dict[str, dict[str, Any]] = {}
@@ -100,6 +112,9 @@ def retrieve(session: Session, snapshot: Snapshot, idx: GraphIndex, query: str, 
             name = s.name.lower()
             best = 0.0
             sig = ""
+            qn = s.qualified_name.lower()
+            if any(qn == d or qn.endswith("." + d) for d in dotted):
+                best, sig = WEIGHTS["qualified_exact"], "qualified_exact"
             for w in raw_words:
                 wl = w.lower()
                 if name == wl or s.qualified_name.lower() == wl:
