@@ -419,7 +419,11 @@ class SnapshotAnalyzer:
             for e in m.errors:
                 self.stats["manifest_errors"] += 1
                 log.info("manifest %s: %s", m.path, e)
+            seen: set[tuple[str, str, str]] = set()
             for d in m.dependencies:
+                if (d.ecosystem, d.name.lower(), d.scope) in seen:
+                    continue  # same package listed in several groups of one manifest
+                seen.add((d.ecosystem, d.name.lower(), d.scope))
                 eid = self.ev.add(m.path, d.line, d.line, EvidenceCategory.DEPENDENCY_DECLARATION, ExtractionMethod.MANIFEST_PARSER, f"{d.ecosystem}:{d.name}")
                 norm = normalize_python_name(d.name) if d.ecosystem == "python" else d.name
                 hits = imported_py.get(norm, []) if d.ecosystem == "python" else imported_npm.get(norm, [])

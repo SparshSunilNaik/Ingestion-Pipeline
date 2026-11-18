@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e2e5ea;
+  --text: #16191d;
+  --muted: #5f6873;
+  --accent: #2f5bd3;
+  --accent-soft: #e6ecfb;
+  --ok: #1f8a4c;
+  --ok-soft: #e3f4ea;
+  --warn: #a96500;
+  --warn-soft: #fbf0dc;
+  --bad: #c2362f;
+  --bad-soft: #fbe6e4;
+  --code-bg: #f7f8fa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1114;
+    --surface: #171a1f;
+    --surface-2: #1f232a;
+    --border: #2b3038;
+    --text: #e6e8eb;
+    --muted: #98a1ad;
+    --accent: #7b9cf0;
+    --accent-soft: #1d2741;
+    --ok: #4cc283;
+    --ok-soft: #14291e;
+    --warn: #e0a64a;
+    --warn-soft: #2d2313;
+    --bad: #ef7a72;
+    --bad-soft: #321a19;
+    --code-bg: #13161a;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-code: var(--code-bg);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* React Flow theming */
+.react-flow {
+  --xy-background-color: var(--surface);
+  --xy-node-background-color: var(--surface);
+  --xy-node-border: 1px solid var(--border);
+  --xy-node-color: var(--text);
+  --xy-edge-stroke: var(--muted);
+  --xy-minimap-background-color: var(--surface-2);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--border);
+}
