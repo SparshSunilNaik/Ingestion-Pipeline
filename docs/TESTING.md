@@ -81,3 +81,16 @@ $env:PW_CHANNEL="msedge"; npx playwright test
 Accessibility fixes made because of these checks: muted-text contrast raised in both themes; citation and
 search buttons' accessible names now contain their visible text; tab strips contain only tabs.
 
+## M7 additions
+
+- Regression for the owner-visible "500 Internal Server Error": `frontend/test/proxy.test.ts` drives the new
+  `/api` proxy against real sockets (refused connection → 503 `backend_unavailable`, silent backend → 504,
+  status/body/query/all `Set-Cookie` pass through, header allow-list, path traversal) and
+  `frontend/test/backend-status.test.tsx` covers the recovery screen (auto re-check, start command, no raw 500).
+- `backend/tests/integration/test_start_scripts.py` (Windows): `start-backend.ps1` with captured output serves
+  `/api/health` from an isolated data directory.
+- Assistant context: pack, prompt and API validation tests (`test_qa_selected_context_leads_the_pack`,
+  `test_qa_prompt_names_the_attached_context`, `test_question_context_must_belong_to_the_snapshot`).
+- Browser: graph → source → graph keeps the exact camera transform and the selection.
+- The Playwright frontend now runs on port 3210 (`PW_FRONTEND_PORT`), backend 8765 (`PW_BACKEND_PORT`).
+

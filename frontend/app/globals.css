@@ -265,10 +265,6 @@ body {
 @keyframes atlas-fade { from { opacity: 0; } to { opacity: 1; } }
 .atlas-fade { animation: atlas-fade var(--t-med) var(--ease-out) both; }
 
-/* Panels glide when collapsed/expanded from a button or shortcut, but follow the pointer exactly while dragging. */
-[data-group]:not(:has([data-separator-state="drag"])) > [data-panel] {
-  transition: flex-grow var(--t-med) var(--ease-out);
-}
 
 /* One-shot line reveal for the landing map (finishes immediately with reduced motion). */
 @keyframes atlas-draw { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }

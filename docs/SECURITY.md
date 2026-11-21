@@ -143,3 +143,11 @@ which remain the primary controls.
   the model any additional access.
 - The API token is never shown or stored by the UI; it is exchanged once for an HttpOnly session cookie.
 
+## M7: /api proxy
+The frontend forwards `/api/*` through `frontend/lib/proxy.ts` instead of a Next.js rewrite. The upstream
+origin is fixed (`IP_BACKEND_URL`, default `http://127.0.0.1:8000`); only the path below `/api` comes from the
+request (traversal segments rejected, segments URL-encoded), so requests and cookies cannot be redirected to
+another host. Only `accept`, `authorization`, `content-type`, `cookie`, `x-ip-csrf` and `user-agent` are
+forwarded upstream; only content/download headers and `Set-Cookie` come back. Failures are reported as
+structured 503/504 without stack traces.
+

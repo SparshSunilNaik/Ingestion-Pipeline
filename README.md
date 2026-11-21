@@ -1,4 +1,6 @@
-# Ingestion-Pipeline
+# Ingestion-Pipeline · Code Atlas
+
+*Explore software like a living system.*
 
 Evidence-grounded repository intelligence workbench. Paste a public GitHub repository URL; the system
 acquires it safely, analyses it statically (Python, TypeScript/JavaScript, Go, Java), builds a resolved
@@ -6,10 +8,10 @@ graph of files, symbols, calls, inheritance and routes, traces possible executio
 questions through a tool-less AI agent, and shows **every statement with verifiable evidence**
 (exact file and line range at an exact commit).
 
-> Status: M0–M6 functional release, ready for user acceptance testing. Not production-ready; designed for a single developer machine.
+> Status: M0–M7 functional release, ready for owner testing. Not production-ready; designed for a single developer machine.
 > See [Known limitations](#known-limitations) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
-![Overview](docs/screenshots/overview.png)
+![Code Atlas — graph with a selected node](docs/screenshots/04-graph-selected.png)
 
 ## Capabilities
 
@@ -20,7 +22,7 @@ questions through a tool-less AI agent, and shows **every statement with verifia
 | Intelligence | Bounded execution-flow tracing; "where is this used?" (direct vs transitive); potential change impact (routes, tests, unresolved references); hybrid deterministic retrieval; snapshot comparison |
 | Evidence | Versioned contract (1.1), stable IDs, verification against disk, claim basis computed by the backend |
 | AI | OpenCode stateless generation without tools; backend read-only evidence gateway; multi-turn Q&A pinned to one commit; validated reports |
-| UI | One workspace: repository explorer (search, files, symbols, entry points, investigations), a tabbed canvas (overview, source, symbol usage/dependencies/impact, architecture, execution flows, report, compare) and a persistent AI assistant beside the code with contextual actions; real analysis stages; light/dark; keyboard and mouse |
+| UI | Code Atlas identity (docs/DESIGN_DIRECTION.md). One workspace: repository explorer (search, files, symbols, entry points, investigations), a tabbed canvas (overview, source, symbol usage/dependencies/impact, architecture, execution flows, report, compare) and a persistent AI assistant beside the code with contextual actions; real analysis stages; light/dark; keyboard and mouse |
 | Ops | Separate worker process with timeouts/cancellation/recovery; local token auth with HttpOnly sessions; PowerShell scripts; CI on Linux + Windows incl. Playwright |
 
 ## Quick start (Windows 11, PowerShell)
@@ -29,7 +31,9 @@ Prerequisites: Python 3.12+, Node.js 20.9+, Git. OpenCode is optional (AI featur
 
 ```powershell
 .\scripts\setup.ps1           # installs uv if needed, syncs backend, npm ci
-.\scripts\start-backend.ps1   # API on http://127.0.0.1:8000 + worker process + private OpenCode
+.\scripts\start-dev.ps1      # backend (API + worker + private OpenCode) and frontend, each in its own window
+# or separately:
+.\scripts\start-backend.ps1   # API on http://127.0.0.1:8000
 .\scripts\start-frontend.ps1  # UI on http://localhost:3000
 ```
 
@@ -51,6 +55,8 @@ user). Open http://localhost:3000, paste it once; the browser then uses an HttpO
 - [docs/EVALUATION.md](docs/EVALUATION.md) — semantic-correctness evaluation (automatic triage vs human review)
 - [docs/TESTING.md](docs/TESTING.md) — test strategy and latest results
 - [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md) — environment setup
+- [docs/DESIGN_DIRECTION.md](docs/DESIGN_DIRECTION.md) — Code Atlas art direction and interaction principles
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — "backend is not running" and other recovery steps
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decision log
 - [docs/ROADMAP.md](docs/ROADMAP.md) — what is done and what is not
 - [docs/screenshots/](docs/screenshots/) — UI screenshots captured from a real instance

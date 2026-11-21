@@ -72,6 +72,23 @@ reports, initial workspace. See git history up to `3734c9e`.
 | Snapshot comparison exercised on a real GitHub repository | partial | verified on real git fixtures (two commits) and in the UI; itsdangerous HEAD did not change during acceptance |
 | AI technical report regenerated in the new UI | not re-verified live in M6 | unchanged backend path, verified in M2/M5 |
 
+## M7 — P0 recovery and Code Atlas
+
+| Item | Status | Notes |
+|---|---|---|
+| "500 Internal Server Error" root cause found and fixed | done | backend not running + rewrite proxy turned ECONNREFUSED into a bare 500; now 503/504 with recovery UI; regression tests (docs/TROUBLESHOOTING.md) |
+| Error recovery: backend down, timeout, auth expiry, error boundaries, not-found | done | auto re-check; no stack traces in the UI |
+| `start-dev.ps1`; start scripts robust to captured output; e2e on its own port | done | |
+| Code Atlas identity: palette, typography, motion, legend labels | done | docs/DESIGN_DIRECTION.md |
+| Landing with real import-map motif, engine status, resume | done | abstract figure only on first run |
+| Living graph: ELK layout, directory groups, kind glyphs, selection illumination, camera glide, highlight search, detail card with source preview | done | ELK lazy-loaded; dagre fallback |
+| Graph ⇄ code round trip keeps camera and selection | done | e2e-tested |
+| Focus mode, sticky definition bar, Alt+↑/↓ symbol jumps, copy link, toasts | done | |
+| Assistant: attached context (backend-validated), document-style answers, evidence previews, real job stage | done | |
+| Monaco/CodeMirror | not adopted | the existing viewer meets the requirements without an IDE-sized dependency |
+| Virtualised file tree / outline for very large repositories | not done | lists are bounded by analysis limits today |
+| Edge bundling for very dense call graphs | not done | progressive disclosure (collapsed groups, hub-first camera, filters) instead |
+
 ## Suggested next steps
 
 1. Human review of the live semantic-evaluation answers (`docs/evaluation/*.review.md`), then grow the dataset.

@@ -405,11 +405,23 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
       } catch {
         saved = null;
       }
-      if (saved && Number.isFinite(saved.zoom)) {
-        void rf.setViewport(saved, { duration: 0 });
-        return;
-      }
       const sel = selected ? rf.getInternalNode(selected) : undefined;
+      if (saved && Number.isFinite(saved.zoom)) {
+        // Return to the remembered camera — unless it would hide the selected node.
+        const pane = document.querySelector(".react-flow__renderer")?.getBoundingClientRect();
+        const visible =
+          !sel ||
+          !pane ||
+          (() => {
+            const x = sel.internals.positionAbsolute.x * saved.zoom + saved.x;
+            const y = sel.internals.positionAbsolute.y * saved.zoom + saved.y;
+            return x >= 0 && y >= 0 && x + NODE_W * saved.zoom <= pane.width - rightInset && y + NODE_H * saved.zoom <= pane.height;
+          })();
+        if (visible) {
+          void rf.setViewport(saved, { duration: 0 });
+          return;
+        }
+      }
       if (sel) {
         void rf.setCenter(sel.internals.positionAbsolute.x + NODE_W / 2 + rightInset / 2 / 0.9, sel.internals.positionAbsolute.y + NODE_H / 2, { zoom: 0.9, duration: 0 });
         return;
