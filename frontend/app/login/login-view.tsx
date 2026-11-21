@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -33,16 +33,12 @@ export function LoginView() {
 
   if (health.error && isBackendDown(health.error)) return <div className="h-full bg-bg"><BackendUnavailable error={health.error} onRetry={health.reload} /></div>;
   return (
-    <div className="flex h-full items-center justify-center bg-bg p-6">
-      <form onSubmit={submit} className="w-[400px] rounded-lg border border-line bg-panel p-6 shadow-[var(--shadow)]">
-        <div className="mb-5 flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-soft text-accent">
-            <GitBranch className="h-4 w-4" aria-hidden />
-          </span>
-          <div>
-            <h1 className="text-[15px] font-semibold">Ingestion-Pipeline</h1>
-            <p className="text-[12px] text-fg-3">Local repository intelligence workbench</p>
-          </div>
+    <div className="atlas-grid flex h-full items-center justify-center bg-bg p-6">
+      <form onSubmit={submit} className="atlas-in w-[420px] rounded-xl border border-line bg-panel p-7 shadow-[var(--shadow)]">
+        <div className="mb-6">
+          <div className="atlas-label flex items-center gap-2"><span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden /> code atlas</div>
+          <h1 className="atlas-display mt-2 text-[34px] text-fg">Sign in to your atlas</h1>
+          <p className="mt-1 text-[12.5px] text-fg-3">Ingestion-Pipeline · local repository intelligence</p>
         </div>
         <label htmlFor="token" className="mb-1.5 flex items-center gap-1.5 text-[12.5px] font-medium text-fg-2">
           <KeyRound className="h-3.5 w-3.5" aria-hidden /> API token

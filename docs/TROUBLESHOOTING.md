@@ -29,7 +29,8 @@ or start everything at once (each in its own window):
 powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1
 ```
 
-Check the state with `scripts\health.ps1`.
+Check the state with `scripts\health.ps1`; stop the project's servers (and only those) with
+`scripts\stop-dev.ps1`.
 
 ## "The backend hit an unexpected error"
 
