@@ -15,7 +15,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   type Viewport,
-  useNodesInitialized,
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -240,10 +239,10 @@ async function elkLayout(nodes: ViewNode[], edges: ViewEdge[], groups: Map<strin
   for (const c of res.children ?? []) {
     if (c.id.startsWith("groupbox:")) {
       const dirName = c.id.slice(9);
-      out.push({ id: c.id, type: "group", position: { x: c.x ?? 0, y: c.y ?? 0 }, style: { width: c.width, height: c.height }, data: { dir: dirName }, selectable: false, draggable: false, zIndex: -1 });
-      for (const k of c.children ?? []) out.push({ id: k.id, type: "atlas", parentId: c.id, extent: "parent", position: { x: k.x ?? 0, y: k.y ?? 0 }, data: {} });
+      out.push({ id: c.id, type: "group", position: { x: c.x ?? 0, y: c.y ?? 0 }, width: c.width, height: c.height, style: { width: c.width, height: c.height }, data: { dir: dirName }, selectable: false, draggable: false, zIndex: -1 });
+      for (const k of c.children ?? []) out.push({ id: k.id, type: "atlas", parentId: c.id, extent: "parent", position: { x: k.x ?? 0, y: k.y ?? 0 }, width: NODE_W, height: NODE_H, data: {} });
     } else {
-      out.push({ id: c.id, type: "atlas", position: { x: c.x ?? 0, y: c.y ?? 0 }, data: {} });
+      out.push({ id: c.id, type: "atlas", position: { x: c.x ?? 0, y: c.y ?? 0 }, width: NODE_W, height: NODE_H, data: {} });
     }
   }
   return { nodes: out, edges };
@@ -259,7 +258,7 @@ function dagreLayout(nodes: ViewNode[], edges: ViewEdge[], direction: "LR" | "TB
   return {
     nodes: nodes.map((n) => {
       const p = g.node(n.key);
-      return { id: n.key, type: "atlas", position: { x: (p?.x ?? 0) - NODE_W / 2, y: (p?.y ?? 0) - NODE_H / 2 }, data: {} };
+      return { id: n.key, type: "atlas", position: { x: (p?.x ?? 0) - NODE_W / 2, y: (p?.y ?? 0) - NODE_H / 2 }, width: NODE_W, height: NODE_H, data: {} };
     }),
     edges,
   };
@@ -380,7 +379,7 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
           style: {
             stroke: lit ? "var(--accent)" : st.stroke,
             strokeDasharray: st.dash,
-            strokeWidth: lit ? 2 : e.kind === "inherits" ? 1.6 : Math.min(2.4, 0.9 + Math.log2(Math.max(1, e.count)) / 2),
+            strokeWidth: lit ? 1.6 : e.kind === "inherits" ? 1.6 : Math.min(2.4, 0.9 + Math.log2(Math.max(1, e.count)) / 2),
             opacity: faded ? 0.08 : lit ? 1 : 0.55,
             transition: "opacity 200ms, stroke 200ms",
           },
@@ -391,14 +390,15 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
   );
 
   // Camera: restore the remembered viewport for this view, otherwise fit; later glide to the selection.
-  const initialized = useNodesInitialized();
   const placedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialized || !rfNodes.length) return;
+    if (!rfNodes.length) return;
     const tag = `${fitKey}|${layoutKey}`;
     if (placedFor.current === tag) return;
-    placedFor.current = tag;
+    // Marked as placed only when the camera actually moves: if this effect re-runs before the timer
+    // fires, the cleanup cancels the timer and the next run schedules it again.
     const t = setTimeout(() => {
+      placedFor.current = tag;
       let saved: Viewport | null = null;
       try {
         saved = viewportKey ? (JSON.parse(sessionStorage.getItem(`ip.vp.${viewportKey}`) ?? "null") as Viewport | null) : null;
@@ -407,6 +407,11 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
       }
       if (saved && Number.isFinite(saved.zoom)) {
         void rf.setViewport(saved, { duration: 0 });
+        return;
+      }
+      const sel = selected ? rf.getInternalNode(selected) : undefined;
+      if (sel) {
+        void rf.setCenter(sel.internals.positionAbsolute.x + NODE_W / 2 + rightInset / 2 / 0.9, sel.internals.positionAbsolute.y + NODE_H / 2, { zoom: 0.9, duration: 0 });
         return;
       }
       void rf.fitView({ ...FIT, duration: 0 }).then(() => {
@@ -425,10 +430,10 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
     return () => clearTimeout(t);
     // view.edges only informs the hub fallback; it changes together with layoutKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, rfNodes.length, fitKey, layoutKey, rf, viewportKey]);
+  }, [rfNodes.length, fitKey, layoutKey, rf, viewportKey]);
 
   useEffect(() => {
-    if (!followSelection || !selected || !rfNodes.length) return;
+    if (!followSelection || !selected || !rfNodes.length || placedFor.current === null) return;
     const n = rf.getInternalNode(selected);
     if (!n) return;
     const zoom = Math.max(rf.getZoom(), 0.85);
@@ -478,6 +483,7 @@ function Canvas({ nodes, edges, selected, onSelect, onOpen, direction = "LR", sh
       <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} color="var(--grid)" />
       <Controls showInteractive={false} position="bottom-left" />
       <MiniMap
+        className="atlas-minimap"
         pannable
         zoomable
         position="bottom-right"

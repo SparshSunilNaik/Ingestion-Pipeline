@@ -54,7 +54,7 @@ export function DashboardView() {
               <Link href={`/snapshots/${last.s.id}`} className="group mt-6 inline-flex items-baseline gap-2 border-b border-line pb-1 hover:border-[var(--accent-line)]">
                 <span className="atlas-label">resume</span>
                 <span className="text-[14px] font-medium text-fg group-hover:text-accent">{last.r.owner}/{last.r.name}</span>
-                <span className="font-mono text-[11px] text-fg-3">@ {last.s.commit_sha.slice(0, 7)} — your tabs are restored →</span>
+                <span className="font-mono text-[11px] text-fg-3" title="Your open tabs are restored">@ {last.s.commit_sha.slice(0, 7)} →</span>
               </Link>
             )}
           </div>

@@ -58,10 +58,12 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function SourceView({ source, highlight, onLineClick, onTopLine, markers, findLines, currentFind }: {
+export function SourceView({ source, highlight, onLineClick, onTopLine, markers, findLines, currentFind, embedded }: {
   source: Source;
   highlight?: [number, number] | null;
   onLineClick?: (line: number) => void;
+  /** A short, non-interactive preview inside another control (no own focus stop). */
+  embedded?: boolean;
   /** Reports the first visible line while scrolling (used for the sticky symbol context). */
   onTopLine?: (line: number) => void;
   markers?: Map<number, string>;
@@ -101,8 +103,12 @@ export function SourceView({ source, highlight, onLineClick, onTopLine, markers,
   return (
     <div
       ref={scrollRef}
-      className="relative h-full overflow-auto bg-code"
+      className="relative h-full overflow-auto bg-code focus-visible:outline-offset-[-2px]"
       data-testid="source-view"
+      // Keyboard users scroll the code with the arrow keys once it has focus.
+      tabIndex={embedded ? undefined : 0}
+      role={embedded ? undefined : "region"}
+      aria-label={embedded ? undefined : `Source of ${source.path}, lines ${source.start_line} to ${source.start_line + source.lines.length - 1}`}
       onScroll={
         onTopLine
           ? (e) => {

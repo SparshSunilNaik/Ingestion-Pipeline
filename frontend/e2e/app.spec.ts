@@ -219,8 +219,9 @@ test.describe("workspace", () => {
   test("unknown snapshot shows a recoverable error", async ({ page }) => {
     await login(page);
     await page.goto("/snapshots/999999");
-    await expect(alert(page)).toContainText("snapshot not found");
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(alert(page)).toContainText("Snapshot not found");
+    await page.getByRole("link", { name: "Browse repositories" }).click();
+    await expect(page).toHaveURL(/\/repositories$/);
   });
 });
 

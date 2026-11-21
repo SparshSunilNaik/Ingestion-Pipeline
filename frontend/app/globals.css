@@ -273,3 +273,8 @@ body {
 /* One-shot line reveal for the landing map (finishes immediately with reduced motion). */
 @keyframes atlas-draw { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
 .atlas-draw { stroke-dasharray: 600; animation: atlas-draw 900ms var(--ease-out) both; }
+
+/* The minimap only earns its space when the graph area is wide. */
+@container (max-width: 720px) {
+  .atlas-minimap { display: none; }
+}

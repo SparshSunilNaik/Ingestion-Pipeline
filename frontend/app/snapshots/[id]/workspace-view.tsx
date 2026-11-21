@@ -3,13 +3,14 @@
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { api, type Snapshot } from "@/lib/api";
+import Link from "next/link";
+import { ApiError, api, type Snapshot } from "@/lib/api";
 import { useAsync, useHotkey, usePref, writePref } from "@/lib/hooks";
 import { Assistant } from "@/components/workspace/assistant";
 import { Canvas } from "@/components/workspace/canvas";
 import { Explorer } from "@/components/workspace/explorer";
 import { NavContext, TAB_PARAMS, type Selection, type Tab, type View, type WorkspaceNav, getEvidence, keyPath, symbolLabel, tabFromParams } from "@/components/workspace/nav";
-import { ErrorState, Spinner } from "@/components/ui";
+import { Button, ErrorState, Spinner } from "@/components/ui";
 
 const MAX_TABS = 12;
 const OVERVIEW: Tab = { id: "overview", view: "overview", title: "Overview", params: { view: "overview" } };
@@ -37,6 +38,7 @@ export function WorkspaceView() {
   const id = Number(params.id);
   const snap = useAsync(() => api.snapshot(id), [id]);
 
+  if (snap.error instanceof ApiError && snap.error.status === 404) return <SnapshotNotFound id={id} />;
   if (snap.error) return <div className="p-6"><ErrorState error={snap.error} onRetry={snap.reload} /></div>;
   if (!snap.data) return <div className="p-6"><Spinner label="Loading workspace" /></div>;
   // Keyed by snapshot: tabs, selection and assistant state never leak between snapshots.
@@ -53,7 +55,8 @@ function Workspace({ snapshot }: { snapshot: Snapshot }) {
   const [picked, setPicked] = useState<{ tabId: string; sel: Selection | null } | null>(null);
   const askerRef = useRef<((question: string, send: boolean) => void) | null>(null);
   const pendingAsk = useRef<{ question: string; send: boolean } | null>(null);
-  const [assistantPref, setAssistantPref] = usePref("ip.assistant", "open");
+  // On narrow windows the assistant starts collapsed (until the user opens it; the choice is remembered).
+  const [assistantPref, setAssistantPref] = usePref("ip.assistant", typeof window !== "undefined" && window.innerWidth < 1200 ? "closed" : "open");
   const [explorerPref, setExplorerPref] = usePref("ip.explorer", "open");
   const assistantOpen = assistantPref === "open";
   const explorerRef = usePanelRef();
@@ -304,5 +307,23 @@ function Workspace({ snapshot }: { snapshot: Snapshot }) {
         </Panel>
       </Group>
     </NavContext.Provider>
+  );
+}
+
+function SnapshotNotFound({ id }: { id: number }) {
+  return (
+    <div className="atlas-grid flex h-full items-center justify-center p-6">
+      <section role="alert" aria-labelledby="nf-title" className="atlas-in max-w-[480px] text-center">
+        <div className="atlas-label">snapshot {id} · not on this map</div>
+        <h1 id="nf-title" className="atlas-display mt-2 text-[40px] text-fg">Snapshot not found</h1>
+        <p className="mt-3 text-[13.5px] leading-relaxed text-fg-2">
+          This analysis does not exist in this installation. The link may come from another machine, or the database was reset.
+        </p>
+        <div className="mt-5 flex justify-center gap-2">
+          <Link href="/repositories"><Button variant="primary">Browse repositories</Button></Link>
+          <Link href="/"><Button>Analyse a repository</Button></Link>
+        </div>
+      </section>
+    </div>
   );
 }

@@ -39,6 +39,8 @@ export const SHORTCUTS: [string, string][] = [
   ["/", "Search this repository (workspace explorer)"],
   ["Ctrl B", "Toggle the repository explorer (sidebar outside the workspace)"],
   ["Ctrl I", "Toggle the investigation assistant"],
+  ["Ctrl .", "Focus mode: hide explorer and assistant"],
+  ["Alt ↑ / ↓", "Previous / next definition in a file"],
   ["Ctrl F", "Find in the open file"],
   ["Alt 1", "Overview"],
   ["Alt 2", "Last open file"],
@@ -262,7 +264,7 @@ function TopBar({ snapshotId, onSearch }: { snapshotId: number | null; onSearch:
 function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]" onClick={onClose}>
-      <div role="dialog" aria-label="Keyboard shortcuts" aria-modal className="w-[420px] rounded-lg border border-line bg-panel p-4 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-label="Keyboard shortcuts" aria-modal className="atlas-in w-[420px] rounded-xl border border-line bg-panel p-4 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-3 text-[13px] font-semibold">Keyboard shortcuts</h2>
         <dl className="space-y-2 text-[12.5px]">
           {SHORTCUTS.map(([k, d]) => (

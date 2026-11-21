@@ -212,7 +212,7 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
           </div>
         )}
       </div>
-      <div className="relative min-h-0 flex-1" data-testid="graph-canvas">
+      <div className="@container relative min-h-0 flex-1" data-testid="graph-canvas">
         {graph.error ? <div className="p-3"><ErrorState error={graph.error} onRetry={graph.reload} /></div> : null}
         {!data && !graph.error && <div className="p-4"><Spinner label="Laying out the graph" /></div>}
         {data && data.nodes.length === 0 && (
@@ -244,8 +244,8 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
         )}
         <div className="pointer-events-none absolute top-2 left-2 z-10 rounded-md border border-line bg-panel/90 px-2 py-1">
           <GraphLegend kinds={nodeKinds} />
+          <div className="mt-1 font-mono text-[10px] text-fg-3">click · inspect &nbsp;·&nbsp; double-click · open</div>
         </div>
-        {data && nodes.length > 0 && <div className="pointer-events-none absolute right-2 bottom-[104px] z-10 rounded bg-panel/80 px-1.5 py-0.5 font-mono text-[10px] text-fg-3">click · inspect &nbsp; double-click · open</div>}
       </div>
     </>
   );
@@ -338,16 +338,17 @@ function DefinitionPreview({ snapshotId, path, start, end }: { snapshotId: numbe
   const last = Math.min(end, start + 13);
   const lines = src.data.lines.slice(start - src.data.start_line, last - src.data.start_line + 1);
   return (
-    <button
-      type="button"
-      onClick={() => nav.openSource({ path, start, end })}
-      className="group block w-full overflow-hidden rounded-lg border border-line text-left hover:border-[var(--accent-line)]"
-      title="Open this definition in the source view"
-    >
+    <figure className="m-0 overflow-hidden rounded-lg border border-line">
       <div className="max-h-[240px] overflow-hidden">
-        <SourceView source={{ ...src.data, start_line: start, end_line: last, lines }} />
+        <SourceView source={{ ...src.data, start_line: start, end_line: last, lines }} embedded />
       </div>
-      {end > last && <div className="border-t border-line px-3 py-1 font-mono text-[10.5px] text-fg-3 group-hover:text-accent">+{end - last} more lines · open source</div>}
-    </button>
+      <button
+        type="button"
+        onClick={() => nav.openSource({ path, start, end })}
+        className="block w-full border-t border-line px-3 py-1 text-left font-mono text-[10.5px] text-fg-3 hover:text-accent"
+      >
+        {end > last ? `+${end - last} more lines · ` : ""}open {path.split("/").pop()}:{start}
+      </button>
+    </figure>
   );
 }

@@ -78,7 +78,10 @@ describe("Architecture explorer", () => {
     const user = userEvent.setup();
     const { nav, container } = renderWithNav(<Architecture snapshot={SNAPSHOT} />, makeNav({}, { gview: "modules", node: "sym:svc/auth.py#login" }));
     expect(await screen.findByText("Used by")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /def login/ })).toBeInTheDocument(); // definition preview from the snapshot
+    const open = await screen.findByRole("button", { name: "open auth.py:4" });
+    expect(container.querySelector('tr[data-line="4"]')?.textContent).toContain("def login(name):"); // preview from the snapshot
+    await user.click(open);
+    expect(nav.openSource).toHaveBeenCalledWith({ path: "svc/auth.py", start: 4, end: 9 });
     await user.click(screen.getByRole("button", { name: /Impact/ }));
     expect(nav.openSymbol).toHaveBeenCalledWith("sym:svc/auth.py#login", "impact");
     await user.click(screen.getByRole("button", { name: /Trace/ }));

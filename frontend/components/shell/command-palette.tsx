@@ -78,7 +78,7 @@ export function CommandPalette({ snapshotId, onClose }: { snapshotId: number | n
   let lastGroup = "";
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[10vh]" onClick={onClose}>
-      <div role="dialog" aria-modal aria-label="Command palette" className="w-[640px] max-w-[92vw] overflow-hidden rounded-lg border border-line bg-panel shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal aria-label="Command palette" className="atlas-in w-[640px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-panel shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
         <div className="flex h-11 items-center gap-2 border-b border-line px-3">
           <Search className="h-4 w-4 text-fg-3" aria-hidden />
           <input
