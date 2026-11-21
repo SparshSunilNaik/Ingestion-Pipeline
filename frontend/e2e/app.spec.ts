@@ -49,10 +49,11 @@ test.describe("home & analysis progress", () => {
     const ids = await benchWorkspace(page);
     await expect(page.getByRole("tab", { name: "Overview" })).toBeVisible();
     await page.goto("/");
-    const row = page.getByRole("row", { name: /acme\/bench/ });
-    await expect(row).toContainText("python");
-    await expect(page.getByRole("heading", { name: "Continue where you left off" })).toBeVisible();
-    await page.getByRole("link", { name: /Reopen workspace/ }).click();
+    await expect(page.getByRole("heading", { name: /Explore software/ })).toBeVisible();
+    const repo = page.getByRole("region", { name: /recent repositories/ }).getByRole("link", { name: /acme\/bench/ });
+    await expect(repo).toContainText("files");
+    await expect(page.getByRole("img", { name: /Import map of \d+ files/ })).toBeVisible(); // real data, not a decoration
+    await page.getByRole("link", { name: /resume/ }).click();
     await expect(page).toHaveURL(new RegExp(`/snapshots/${ids["acme/bench"][0]}`));
     await page.goto("/");
     await noHorizontalOverflow(page);
@@ -136,9 +137,26 @@ test.describe("workspace", () => {
     await expect(page.getByText("Imported by").first()).toBeVisible();
     await page.getByRole("radio", { name: "Calls" }).click();
     await page.getByLabel("Find and focus a node").fill("Account.validate");
-    await page.getByRole("button", { name: "Focus" }).first().click();
+    await page.getByRole("search").getByRole("button", { name: "Focus" }).click();
     await expect(page).toHaveURL(/gview=focus/);
     await expect(graph.locator(".react-flow__node", { hasText: "Account.validate" }).first()).toBeVisible();
+  });
+
+  test("graph to code and back keeps the camera and the selection", async ({ page }) => {
+    await benchWorkspace(page, "?view=architecture&gview=files&prefix=svc%2Fcore");
+    const graph = page.getByTestId("graph-canvas");
+    await graph.locator(".react-flow__node", { hasText: "auth.py" }).first().click();
+    const card = page.getByRole("complementary", { name: "Node details" });
+    await expect(card).toContainText("auth.py");
+    await page.waitForTimeout(700); // camera glide settles
+    const before = await graph.locator(".react-flow__viewport").getAttribute("style");
+    await card.getByRole("button", { name: /Source/ }).click();
+    await expect(page.getByTestId("source-view")).toContainText("def login");
+    await page.getByRole("tab", { name: "Architecture" }).click();
+    await expect(page).toHaveURL(/node=file%3Asvc%2Fcore%2Fauth\.py/);
+    await expect(page.getByRole("complementary", { name: "Node details" })).toContainText("auth.py");
+    await page.waitForTimeout(700);
+    expect(await graph.locator(".react-flow__viewport").getAttribute("style")).toBe(before);
   });
 
   test("execution flow from an entry point opens as its own context", async ({ page }) => {

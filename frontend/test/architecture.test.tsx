@@ -5,13 +5,14 @@ import type { ViewNode } from "@/lib/api";
 import { Architecture, defaultGraphView } from "@/components/workspace/architecture";
 import { SNAPSHOT, axeViolations, makeNav, renderWithNav } from "./helpers";
 
-const api = vi.hoisted(() => ({ graphView: vi.fn(), usage: vi.fn(), retrieve: vi.fn(), evidence: vi.fn() }));
+const api = vi.hoisted(() => ({ graphView: vi.fn(), usage: vi.fn(), retrieve: vi.fn(), evidence: vi.fn(), source: vi.fn() }));
 vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api }));
 
 // React Flow needs real layout; the canvas is replaced by a list that exposes the same callbacks.
 vi.mock("@/components/workspace/graph-canvas", () => ({
   KIND_VAR: {},
   GraphLegend: () => null,
+  visualKind: (n: { kind: string }) => n.kind,
   GraphCanvas: ({ nodes, onSelect, onOpen }: { nodes: ViewNode[]; onSelect: (k: string) => void; onOpen?: (n: ViewNode) => void }) => (
     <ul aria-label="graph">
       {nodes.map((n) => (
@@ -24,6 +25,7 @@ vi.mock("@/components/workspace/graph-canvas", () => ({
 }));
 
 beforeEach(() => {
+  api.source.mockResolvedValue({ path: "svc/auth.py", start_line: 1, end_line: 9, total_lines: 9, language: "python", lines: ["", "", "", "def login(name):", "    return token(name)", "", "", "", ""] });
   api.graphView.mockResolvedValue({
     view: "modules",
     truncated: false,
@@ -76,6 +78,7 @@ describe("Architecture explorer", () => {
     const user = userEvent.setup();
     const { nav, container } = renderWithNav(<Architecture snapshot={SNAPSHOT} />, makeNav({}, { gview: "modules", node: "sym:svc/auth.py#login" }));
     expect(await screen.findByText("Used by")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /def login/ })).toBeInTheDocument(); // definition preview from the snapshot
     await user.click(screen.getByRole("button", { name: /Impact/ }));
     expect(nav.openSymbol).toHaveBeenCalledWith("sym:svc/auth.py#login", "impact");
     await user.click(screen.getByRole("button", { name: /Trace/ }));

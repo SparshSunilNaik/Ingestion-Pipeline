@@ -4,7 +4,6 @@ import {
   Bot,
   Boxes,
   Clock,
-  FileCode,
   GitBranch,
   Keyboard,
   LayoutDashboard,
@@ -24,6 +23,7 @@ import { api, setUnauthorizedHandler } from "@/lib/api";
 import { useAsync, useHotkey, usePref } from "@/lib/hooks";
 import { BackendUnavailable, isBackendDown } from "@/components/shell/backend-status";
 import { CommandPalette } from "@/components/shell/command-palette";
+import { Toaster } from "@/components/shell/toaster";
 import { Badge, IconButton, Kbd, ShortSha, StatusDot, cn, jobTone, ErrorState } from "@/components/ui";
 
 const NAV = [
@@ -100,10 +100,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-full">
       <aside className={cn("flex shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-150", open ? "w-[220px]" : "w-[52px]")} aria-label="Primary">
         <div className="flex h-11 items-center gap-2 border-b border-line px-3">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
-            <GitBranch className="h-3.5 w-3.5" aria-hidden />
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center" aria-hidden>
+            <AtlasMark />
           </span>
-          {open && <span className="truncate text-[13px] font-semibold tracking-tight">Ingestion-Pipeline</span>}
+          {open && (
+            <span className="truncate font-mono text-[11.5px] font-semibold tracking-[0.18em] uppercase">
+              Code <span className="text-accent">Atlas</span>
+            </span>
+          )}
         </div>
         <nav className="flex flex-col gap-0.5 p-2">
           {NAV.map((n) => {
@@ -164,6 +168,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       {palette && <CommandPalette snapshotId={activeSnapshot} onClose={() => setPalette(false)} />}
+      <Toaster />
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
     </div>
   );
@@ -230,7 +235,9 @@ function TopBar({ snapshotId, onSearch }: { snapshotId: number | null; onSearch:
           </>
         ) : (
           <span className="flex items-center gap-2 text-[13px] text-fg-2">
-            <FileCode className="h-4 w-4 text-fg-3" aria-hidden /> Repository intelligence workbench
+            <span className="atlas-label">code atlas</span>
+            <span className="text-fg-3">·</span>
+            <span className="text-[12.5px] text-fg-3">explore software like a living system</span>
           </span>
         )}
       </div>
@@ -271,5 +278,20 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         </dl>
       </div>
     </div>
+  );
+}
+
+/** The Code Atlas mark: a node in focus with its relationships — the product's one idea, drawn small. */
+function AtlasMark() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22">
+      <line x1="12" y1="12" x2="4" y2="6" stroke="var(--support)" strokeWidth="1.3" />
+      <line x1="12" y1="12" x2="20" y2="7" stroke="var(--support)" strokeWidth="1.3" />
+      <line x1="12" y1="12" x2="15" y2="20" stroke="var(--accent)" strokeWidth="1.6" />
+      <circle cx="4" cy="6" r="2" fill="var(--bg)" stroke="var(--support)" strokeWidth="1.3" />
+      <circle cx="20" cy="7" r="2" fill="var(--bg)" stroke="var(--support)" strokeWidth="1.3" />
+      <circle cx="15" cy="20" r="2" fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.3" />
+      <circle cx="12" cy="12" r="3.4" fill="var(--accent)" />
+    </svg>
   );
 }

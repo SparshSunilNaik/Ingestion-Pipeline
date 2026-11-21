@@ -211,10 +211,37 @@ function Workspace({ snapshot }: { snapshot: Snapshot }) {
       setSelection: (s) => setPicked((prev) => (prev?.tabId === active.id && prev.sel?.key === s?.key && prev.sel?.start === s?.start ? prev : { tabId: active.id, sel: s })),
       assistantOpen,
       setAssistantOpen,
+      focusMode: explorerPref === "closed" && !assistantOpen,
+      toggleFocus: () => {
+        const p = explorerRef.current;
+        const entering = !(explorerPref === "closed" && !assistantOpen);
+        if (entering) {
+          try {
+            sessionStorage.setItem("ip.focus.restore", JSON.stringify({ explorer: explorerPref, assistant: assistantOpen }));
+          } catch {
+            /* storage unavailable */
+          }
+          p?.collapse();
+          setExplorerPref("closed");
+          setAssistantOpen(false);
+        } else {
+          let restore = { explorer: "open", assistant: true };
+          try {
+            restore = { ...restore, ...JSON.parse(sessionStorage.getItem("ip.focus.restore") ?? "{}") };
+          } catch {
+            /* default restore */
+          }
+          if (restore.explorer !== "closed") {
+            p?.expand();
+            setExplorerPref("open");
+          }
+          setAssistantOpen(restore.assistant !== false);
+        }
+      },
       param: (name) => search.get(name),
       setParams,
     };
-  }, [sid, snapshot, active, tabs, go, setAssistantOpen, picked, assistantOpen, search, setParams]);
+  }, [sid, snapshot, active, tabs, go, setAssistantOpen, picked, assistantOpen, search, setParams, explorerPref, explorerRef, setExplorerPref]);
 
   useHotkey("mod+b", () => {
     const p = explorerRef.current;
@@ -228,6 +255,7 @@ function Workspace({ snapshot }: { snapshot: Snapshot }) {
     }
   }, { allowInInputs: true });
   useHotkey("mod+i", () => setAssistantOpen(!assistantOpen), { allowInInputs: true });
+  useHotkey("mod+.", () => nav.toggleFocus(), { allowInInputs: true });
   useHotkey("alt+1", () => nav.setView("overview"));
   useHotkey("alt+2", () => nav.setView("code"));
   useHotkey("alt+3", () => nav.setView("architecture"));

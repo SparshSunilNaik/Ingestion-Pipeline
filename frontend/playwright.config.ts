@@ -6,8 +6,8 @@ import { E2E_TOKEN } from "./e2e/constants";
 // End-to-end tests run against a REAL backend (separate test data dir, test-only token, seeded from
 // tests/fixtures) and a real Next.js server. OpenCode is disabled; agent-dependent UI paths that need a
 // model use explicitly mocked API responses inside the individual tests.
-const BACKEND_PORT = 8765;
-const FRONTEND_PORT = 3100;
+const BACKEND_PORT = Number(process.env.PW_BACKEND_PORT ?? 8765);
+const FRONTEND_PORT = Number(process.env.PW_FRONTEND_PORT ?? 3210);
 const DATA_DIR = path.join(__dirname, "e2e", ".data");
 const UV = (process.env.IP_UV_CMD ?? "uv").split(" ");
 // Fresh, isolated data for every run (evaluated before the web servers start).

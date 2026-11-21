@@ -58,10 +58,12 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function SourceView({ source, highlight, onLineClick, markers, findLines, currentFind }: {
+export function SourceView({ source, highlight, onLineClick, onTopLine, markers, findLines, currentFind }: {
   source: Source;
   highlight?: [number, number] | null;
   onLineClick?: (line: number) => void;
+  /** Reports the first visible line while scrolling (used for the sticky symbol context). */
+  onTopLine?: (line: number) => void;
   markers?: Map<number, string>;
   /** Lines containing the current find-in-file query. */
   findLines?: Set<number>;
@@ -97,7 +99,19 @@ export function SourceView({ source, highlight, onLineClick, markers, findLines,
 
   const [lo, hi] = highlight ?? [0, -1];
   return (
-    <div ref={scrollRef} className="relative h-full overflow-auto bg-code" data-testid="source-view">
+    <div
+      ref={scrollRef}
+      className="relative h-full overflow-auto bg-code"
+      data-testid="source-view"
+      onScroll={
+        onTopLine
+          ? (e) => {
+              const el = e.currentTarget;
+              requestAnimationFrame(() => onTopLine(source.start_line + Math.floor(el.scrollTop / 20)));
+            }
+          : undefined
+      }
+    >
       <table className="w-full border-collapse font-mono text-[12.5px] leading-[20px]">
         <tbody>
           {lines.map((html, i) => {

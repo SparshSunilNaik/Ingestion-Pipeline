@@ -2,14 +2,14 @@
 
 import { Crosshair, FileCode, FolderTree, ListFilter, Play, Radar, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Group, Panel as RPanel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { api, type Snapshot } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { questionFor } from "@/components/workspace/actions";
-import { GraphCanvas, GraphLegend } from "@/components/workspace/graph-canvas";
+import { GraphCanvas, GraphLegend, visualKind } from "@/components/workspace/graph-canvas";
 import { EvidenceChip, keyPath, symbolLabel, useNav } from "@/components/workspace/nav";
+import { SourceView } from "@/components/workspace/source-view";
 import { RelatedBlock } from "@/components/workspace/related";
-import { Badge, Button, EmptyState, ErrorState, IconButton, Segmented, SkeletonRows, Spinner, cn } from "@/components/ui";
+import { Button, EmptyState, ErrorState, IconButton, Segmented, SkeletonRows, Spinner, cn } from "@/components/ui";
 
 type GView = "modules" | "files" | "calls" | "routes" | "focus";
 const GVIEWS: { id: GView; label: string; title: string }[] = [
@@ -33,7 +33,6 @@ export function Architecture({ snapshot: s }: { snapshot: Snapshot }) {
   const focus = nav.param("focus");
   const prefix = nav.param("prefix");
   const [radius, setRadius] = useState(1);
-  const layout = useDefaultLayout({ id: "ip.arch.layout" });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -50,19 +49,19 @@ export function Architecture({ snapshot: s }: { snapshot: Snapshot }) {
         )}
         <FocusSearch snapshotId={s.id} />
       </div>
-      <Group orientation="horizontal" id="ip.arch.layout" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1">
-        <RPanel id="graph" defaultSize="70" minSize="40" className="flex min-h-0 flex-col">
-          <GraphPane snapshot={s} view={gview} focus={focus} radius={radius} prefix={prefix} />
-        </RPanel>
+      {/* The detail card floats over the graph, so selecting a node never reflows or re-fits the canvas. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <GraphPane snapshot={s} view={gview} focus={focus} radius={radius} prefix={prefix} />
         {(nav.param("node") || focus) && (
-          <>
-            <Separator aria-label="Resize graph inspector" />
-            <RPanel id="inspector" defaultSize="32" minSize="22" className="flex min-h-0 flex-col bg-panel">
-              <Inspector snapshot={s} />
-            </RPanel>
-          </>
+          <aside
+            key={nav.param("node") ?? focus ?? ""}
+            aria-label="Node details"
+            className="atlas-in absolute top-12 right-3 bottom-3 z-20 flex w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-[var(--shadow)]"
+          >
+            <Inspector snapshot={s} />
+          </aside>
         )}
-      </Group>
+      </div>
     </div>
   );
 }
@@ -119,9 +118,11 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
   const [hiddenRes, setHiddenRes] = useState<Set<string>>(new Set(view === "calls" ? ["unresolved"] : []));
   const [hideIsolated, setHideIsolated] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [find, setFind] = useState("");
+  const [findCursor, setFindCursor] = useState(0);
   const data = graph.data;
   const edgeKinds = useMemo(() => [...new Set((data?.edges ?? []).map((e) => e.kind))].sort(), [data]);
-  const nodeKinds = useMemo(() => [...new Set((data?.nodes ?? []).map((n) => n.kind))].sort(), [data]);
+  const nodeKinds = useMemo(() => [...new Set((data?.nodes ?? []).map((n) => visualKind(n)))].sort(), [data]);
   const edges = useMemo(() => (data?.edges ?? []).filter((e) => !hiddenKinds.has(e.kind) && !hiddenRes.has(e.resolution)), [data, hiddenKinds, hiddenRes]);
   const nodes = useMemo(() => {
     const all = data?.nodes ?? [];
@@ -136,6 +137,13 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
     setter(n);
   };
   const hiddenCount = hiddenKinds.size + hiddenRes.size;
+  // In-graph search: marks matches without changing the layout; Enter travels to the next match.
+  const matches = useMemo(() => {
+    const q = find.trim().toLowerCase();
+    if (q.length < 2) return [] as string[];
+    return nodes.filter((n) => n.label.toLowerCase().includes(q) || (n.path ?? "").toLowerCase().includes(q)).map((n) => n.key);
+  }, [find, nodes]);
+  const highlight = useMemo(() => (matches.length ? new Set(matches) : null), [matches]);
 
   if (view === "focus" && !focus) {
     return (
@@ -154,6 +162,31 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
           <input type="checkbox" checked={hideIsolated} onChange={() => setHideIsolated(!hideIsolated)} className="accent-[var(--accent)]" />
           hide unconnected
         </label>
+        <div className="relative">
+          <input
+            value={find}
+            onChange={(e) => {
+              setFind(e.target.value);
+              setFindCursor(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && matches.length) {
+                const next = matches[findCursor % matches.length];
+                setFindCursor((c) => c + 1);
+                nav.setParams({ node: next });
+              }
+              if (e.key === "Escape") setFind("");
+            }}
+            placeholder="Highlight in graph"
+            aria-label="Highlight nodes in this graph"
+            className="h-7 w-44 rounded-md border border-line bg-panel-2 px-2 font-mono text-[11.5px] outline-none placeholder:text-fg-3 focus:border-accent"
+          />
+          {find.trim().length >= 2 && (
+            <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 font-mono text-[10px] text-fg-3" aria-live="polite">
+              {matches.length ? `${matches.length} · ⏎` : "0"}
+            </span>
+          )}
+        </div>
         {data && (
           <span className="ml-auto text-[11.5px] text-fg-3" aria-live="polite">
             {nodes.length} of {data.nodes.length} nodes · {edges.length} relationships{data.truncated ? " · showing the most connected" : ""}
@@ -190,6 +223,7 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
         {data && data.nodes.length > 0 && nodes.length === 0 && <EmptyState title="Every node is unconnected with the current filters">Untick &ldquo;hide unconnected&rdquo; or show more relationship kinds.</EmptyState>}
         {data && nodes.length > 0 && (
           <GraphCanvas
+            key={`${view}:${focus}:${radius}:${prefix}`}
             nodes={nodes}
             edges={edges}
             selected={selected}
@@ -201,12 +235,17 @@ function GraphPane({ snapshot: s, view, focus, radius, prefix }: { snapshot: Sna
             }}
             showCounts={view === "modules"}
             fitKey={`${view}:${focus}:${radius}:${prefix}`}
+            group={view === "files" || view === "calls"}
+            highlight={highlight}
+            viewportKey={`${s.id}:${view}:${prefix ?? ""}:${focus ?? ""}:${radius}`}
+            followSelection
+            rightInset={selected ? 372 : 0}
           />
         )}
-        <div className="pointer-events-none absolute top-2 left-2 rounded-md border border-line bg-panel/90 px-2 py-1">
+        <div className="pointer-events-none absolute top-2 left-2 z-10 rounded-md border border-line bg-panel/90 px-2 py-1">
           <GraphLegend kinds={nodeKinds} />
         </div>
-        {data && nodes.length > 0 && <div className="pointer-events-none absolute right-2 bottom-[108px] rounded bg-panel/80 px-1.5 py-0.5 text-[10.5px] text-fg-3">Click to inspect · double-click to open</div>}
+        {data && nodes.length > 0 && <div className="pointer-events-none absolute right-2 bottom-[104px] z-10 rounded bg-panel/80 px-1.5 py-0.5 font-mono text-[10px] text-fg-3">click · inspect &nbsp; double-click · open</div>}
       </div>
     </>
   );
@@ -233,22 +272,22 @@ function Inspector({ snapshot: s }: { snapshot: Snapshot }) {
   const isModule = kind === "module" || kind === "dir";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-line p-3">
+      <div className="shrink-0 border-b border-line p-3.5">
         <div className="flex items-center gap-1.5">
-          <Badge tone="accent">{isModule ? "directory" : kind}</Badge>
-          <IconButton label="Clear selection" className="ml-auto" onClick={() => nav.setParams({ node: null })}><X className="h-3.5 w-3.5" /></IconButton>
+          <span className="atlas-label">{isModule ? "directory" : kind}</span>
+          <IconButton label="Close details (Esc)" className="ml-auto" onClick={() => nav.setParams({ node: null })}><X className="h-3.5 w-3.5" /></IconButton>
         </div>
-        <div className="mt-1 font-mono text-[12.5px] break-all">{isModule ? key.replace(/^[a-z]+:/, "") : symbolLabel(key)}</div>
-        {path && <div className="truncate font-mono text-[11px] text-fg-3">{path}</div>}
-        <div className="mt-2 flex flex-wrap gap-1">
+        <h2 className="mt-0.5 font-mono text-[15px] break-all text-fg">{isModule ? key.replace(/^[a-z]+:/, "") : symbolLabel(key)}</h2>
+        {path && <div className="truncate font-mono text-[11px] text-support">{path}</div>}
+        <div className="mt-2.5 flex flex-wrap gap-1">
           {isModule && <Button size="sm" variant="secondary" onClick={() => nav.setParams({ gview: "files", prefix: key.replace(/^[a-z]+:/, ""), node: null })}><FolderTree className="h-3.5 w-3.5" aria-hidden /> Open directory</Button>}
           {path && <Button size="sm" variant="ghost" onClick={() => nav.openSource({ path, sym: key.startsWith("sym:") ? key : undefined })}><FileCode className="h-3.5 w-3.5" aria-hidden /> Source</Button>}
           {!isModule && kind !== "pkg" && <Button size="sm" variant="ghost" onClick={() => nav.openSymbol(key, "impact")}><Radar className="h-3.5 w-3.5" aria-hidden /> Impact</Button>}
           {(kind === "symbol" || kind === "route") && <Button size="sm" variant="ghost" onClick={() => nav.openFlow(key)}><Play className="h-3.5 w-3.5" aria-hidden /> Trace</Button>}
           {!isModule && <Button size="sm" variant="ghost" onClick={() => nav.setParams({ gview: "focus", focus: key, prefix: null })}><Crosshair className="h-3.5 w-3.5" aria-hidden /> Focus</Button>}
           {!isModule && kind !== "pkg" && (
-            <Button size="sm" variant="ghost" onClick={() => nav.ask(questionFor("explain", { kind: kind === "file" ? "file" : kind === "route" ? "route" : "symbol", key, label: symbolLabel(key), path }), { send: true })}>
-              Explain
+            <Button size="sm" variant="primary" onClick={() => nav.ask(questionFor("explain", { kind: kind === "file" ? "file" : kind === "route" ? "route" : "symbol", key, label: symbolLabel(key), path }), { send: true })}>
+              Ask about this
             </Button>
           )}
         </div>
@@ -274,11 +313,13 @@ function NodeUsage({ snapshotId, nodeKey }: { snapshotId: number; nodeKey: strin
   if (u.error) return <ErrorState error={u.error} compact onRetry={u.reload} />;
   if (!u.data) return <SkeletonRows rows={6} />;
   const d = u.data;
+  const def = d.definition;
   const select = (k: string) => nav.setParams({ node: k });
   return (
     <div className="space-y-3">
-      {d.definition.evidence_id && (
-        <div className="flex items-center gap-2"><span className="text-fg-3">Defined at</span><EvidenceChip id={d.definition.evidence_id} /></div>
+      {def.path && def.start_line && def.kind !== "file" && <DefinitionPreview snapshotId={snapshotId} path={def.path} start={def.start_line} end={def.end_line ?? def.start_line} />}
+      {def.evidence_id && (
+        <div className="flex items-center gap-2"><span className="atlas-label">defined at</span><EvidenceChip id={def.evidence_id} /></div>
       )}
       <RelatedBlock title="Used by" items={d.direct_references.map((r) => ({ key: r.key + r.call_line, label: r.label, sub: r.relation, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} empty="No resolved callers or subclasses." />
       {d.imports && <RelatedBlock title="Imports" items={d.imports.map((r) => ({ key: r.key, label: r.label, resolution: r.resolution, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} />}
@@ -286,5 +327,27 @@ function NodeUsage({ snapshotId, nodeKey }: { snapshotId: number; nodeKey: strin
       <RelatedBlock title="Calls" items={d.direct_callees.map((r) => ({ key: r.key + (r.call_line ?? ""), label: r.label, resolution: r.resolution, via: r.via, ev: r.evidence_id, onClick: () => select(r.key) }))} limit={15} />
       {d.related_routes.length > 0 && <RelatedBlock title="Reached from routes" items={d.related_routes.map((r) => ({ key: r.key, label: r.label, sub: `${r.depth} hops`, onClick: () => nav.openFlow(r.key) }))} />}
     </div>
+  );
+}
+
+/** The first lines of a definition, read from the snapshot (never more than 14 lines). */
+function DefinitionPreview({ snapshotId, path, start, end }: { snapshotId: number; path: string; start: number; end: number }) {
+  const nav = useNav();
+  const src = useAsync(() => api.source(snapshotId, path), [snapshotId, path]);
+  if (!src.data) return src.error ? null : <SkeletonRows rows={3} />;
+  const last = Math.min(end, start + 13);
+  const lines = src.data.lines.slice(start - src.data.start_line, last - src.data.start_line + 1);
+  return (
+    <button
+      type="button"
+      onClick={() => nav.openSource({ path, start, end })}
+      className="group block w-full overflow-hidden rounded-lg border border-line text-left hover:border-[var(--accent-line)]"
+      title="Open this definition in the source view"
+    >
+      <div className="max-h-[240px] overflow-hidden">
+        <SourceView source={{ ...src.data, start_line: start, end_line: last, lines }} />
+      </div>
+      {end > last && <div className="border-t border-line px-3 py-1 font-mono text-[10.5px] text-fg-3 group-hover:text-accent">+{end - last} more lines · open source</div>}
+    </button>
   );
 }

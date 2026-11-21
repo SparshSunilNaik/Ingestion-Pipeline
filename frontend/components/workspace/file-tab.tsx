@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Braces, ChevronRight, FileCode, Network, PanelRightClose, PanelRightOpen, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Braces, ChevronRight, FileCode, Link2, Network, PanelRightClose, PanelRightOpen, Search, X } from "lucide-react";
+import { toast } from "@/components/shell/toaster";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { api, type SymbolRow } from "@/lib/api";
@@ -57,6 +58,21 @@ function SourcePane({ path, inspectorOpen, onToggleInspector }: { path: string; 
   const tree = useAsync(() => api.tree(s.id), [s.id]);
   const meta = tree.data?.files.find((f) => f.p === path);
   const markers = useMemo(() => new Map((syms.data ?? []).map((x) => [x.start_line, `${x.kind} ${x.qualified_name}`])), [syms.data]);
+  // Sticky context: the innermost symbol that contains the first visible line.
+  const [topLine, setTopLine] = useState(1);
+  const enclosing = useMemo(() => {
+    const inside = (syms.data ?? []).filter((x) => x.start_line < topLine && x.end_line >= topLine);
+    return inside.sort((a, b) => a.end_line - a.start_line - (b.end_line - b.start_line))[0] ?? null;
+  }, [syms.data, topLine]);
+  // Alt+Down / Alt+Up jump between symbol definitions.
+  const ordered = useMemo(() => [...(syms.data ?? [])].sort((a, b) => a.start_line - b.start_line), [syms.data]);
+  const jump = (dir: 1 | -1) => {
+    const from = range?.[0] ?? topLine;
+    const next = dir === 1 ? ordered.find((x) => x.start_line > from) : [...ordered].reverse().find((x) => x.start_line < from);
+    if (next) nav.openSource({ path, start: next.start_line, end: next.end_line, sym: symKey(next) });
+  };
+  useHotkey("alt+arrowdown", () => jump(1));
+  useHotkey("alt+arrowup", () => jump(-1));
 
   const [findOpen, setFindOpen] = useState(false);
   const [find, setFind] = useState("");
@@ -96,6 +112,14 @@ function SourcePane({ path, inspectorOpen, onToggleInspector }: { path: string; 
         <span className="ml-auto flex shrink-0 items-center gap-2 text-fg-3">
           {src.data && <span>{src.data.total_lines} lines</span>}
           {meta && <span className="hidden lg:inline">· {meta.l ?? meta.c} · {formatBytes(meta.s)}</span>}
+          <IconButton
+            label="Copy a link to these lines"
+            onClick={() => {
+              void navigator.clipboard?.writeText(window.location.href).then(() => toast(range ? `Link to ${path.split("/").pop()}:${range[0]} copied` : "Link copied"), () => undefined);
+            }}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+          </IconButton>
           <IconButton label="Find in file (Ctrl+F)" onClick={() => { setFindOpen(!findOpen); setTimeout(() => findRef.current?.focus(), 0); }} active={findOpen}>
             <Search className="h-3.5 w-3.5" />
           </IconButton>
@@ -125,6 +149,18 @@ function SourcePane({ path, inspectorOpen, onToggleInspector }: { path: string; 
           <IconButton label="Close find" onClick={() => setFindOpen(false)}><X className="h-3.5 w-3.5" /></IconButton>
         </div>
       )}
+      {enclosing && (
+        <button
+          type="button"
+          onClick={() => nav.openSource({ path, start: enclosing.start_line, end: enclosing.end_line, sym: symKey(enclosing) })}
+          className="atlas-fade flex h-7 shrink-0 items-center gap-2 border-b border-line bg-panel px-3 text-left"
+          title="You are inside this definition. Click to select it. Alt+Up/Down jumps between definitions."
+        >
+          <span className="atlas-label">in</span>
+          <span className="truncate font-mono text-[11.5px] text-fg">{enclosing.qualified_name}</span>
+          <span className="font-mono text-[10.5px] text-fg-3">{enclosing.kind} · {enclosing.start_line}–{enclosing.end_line}</span>
+        </button>
+      )}
       <div className="min-h-0 flex-1">
         {src.error ? (
           <div className="p-3">
@@ -141,6 +177,7 @@ function SourcePane({ path, inspectorOpen, onToggleInspector }: { path: string; 
             findLines={findOpen ? new Set(matches) : undefined}
             currentFind={findOpen ? current : null}
             onLineClick={(n) => nav.setParams({ l: `${n}-${n}`, sym: null })}
+            onTopLine={setTopLine}
           />
         )}
       </div>
@@ -188,7 +225,7 @@ function SymbolPane({ path }: { path: string }) {
               >
                 <Braces className="h-3 w-3 shrink-0" style={{ color: `var(--k-${x.kind === "method" ? "method" : ["class", "interface", "enum"].includes(x.kind) ? "class" : "function"})` }} aria-hidden />
                 <span className="truncate font-mono text-[12px]">{x.name}</span>
-                <span className="ml-auto shrink-0 text-[10.5px] text-fg-3">{x.kind}</span>
+                <span className={cn("ml-auto shrink-0 text-[10.5px]", selected?.id === x.id ? "text-fg-2" : "text-fg-3")}>{x.kind}</span>
               </button>
             </li>
           ))}

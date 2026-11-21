@@ -1,7 +1,7 @@
 "use client";
 
 import { FileCode } from "lucide-react";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { api, type EvidenceDetail, type Snapshot } from "@/lib/api";
 import { cn } from "@/components/ui";
 
@@ -54,6 +54,9 @@ export interface WorkspaceNav {
   selection: Selection | null;
   setSelection: (s: Selection | null) => void;
   assistantOpen: boolean;
+  /** Focus mode: explorer and assistant collapsed so the canvas has the whole window. */
+  focusMode: boolean;
+  toggleFocus: () => void;
   setAssistantOpen: (open: boolean) => void;
   param: (name: string) => string | null;
   setParams: (patch: Record<string, string | null>) => void;
@@ -137,23 +140,66 @@ export function EvidenceChip({ id, className }: { id: string; className?: string
   }, [id]);
   const label = ev ? `${ev.path.split("/").slice(-2).join("/")}:${ev.start_line}${ev.end_line !== ev.start_line ? `-${ev.end_line}` : ""}` : failed ? "unavailable" : id.slice(0, 11);
   const where = ev ? `${ev.path} lines ${ev.start_line}–${ev.end_line}` : "evidence";
+  // Evidence preview: after a short hover (or keyboard focus) show the cited lines in place.
+  const [peek, setPeek] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const show = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setPeek(true), 350);
+  };
+  const hide = () => {
+    if (timer.current) clearTimeout(timer.current);
+    setPeek(false);
+  };
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const excerpt = ev?.excerpt ? ev.excerpt.split(/\r?\n/).slice(0, 8) : null;
   return (
-    <button
-      type="button"
-      disabled={failed}
-      onClick={() => ev && nav.openSource({ path: ev.path, start: ev.start_line, end: ev.end_line })}
-      title={ev ? `${ev.path}:${ev.start_line}-${ev.end_line} · ${ev.category} · ${ev.source_kind} · ${ev.verified_now ? "verified" : "NOT verified"} · ${id}` : id}
-      aria-label={ev ? `${label}, open ${where}` : `${label}, ${where}`}
-      data-evidence-id={id}
-      className={cn(
-        "inline-flex h-[20px] max-w-[260px] items-center gap-1 rounded border border-line bg-panel-2 px-1.5 font-mono text-[11px] text-fg-2 transition-colors hover:border-accent hover:text-accent disabled:opacity-50",
-        ev && !ev.verified_now && "border-bad/50 text-bad",
-        className,
+    <span className="relative inline-flex max-w-full" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+      <button
+        type="button"
+        disabled={failed}
+        onClick={() => ev && nav.openSource({ path: ev.path, start: ev.start_line, end: ev.end_line })}
+        onKeyDown={(e) => e.key === "Escape" && hide()}
+        aria-label={ev ? `${label}, open ${where}` : `${label}, ${where}`}
+        aria-describedby={peek && ev ? `peek-${id}` : undefined}
+        data-evidence-id={id}
+        className={cn(
+          "inline-flex h-[20px] max-w-[260px] items-center gap-1 rounded border border-line bg-panel-2 px-1.5 font-mono text-[11px] text-fg-2 transition-colors hover:border-[var(--accent-line)] hover:text-accent disabled:opacity-50",
+          ev && !ev.verified_now && "border-bad/50 text-bad",
+          className,
+        )}
+      >
+        <FileCode className="h-3 w-3 shrink-0" aria-hidden />
+        <span className="truncate">{label}</span>
+      </button>
+      {peek && ev && (
+        <span
+          id={`peek-${id}`}
+          role="tooltip"
+          className="atlas-in pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 block w-[min(420px,80vw)] overflow-hidden rounded-lg border border-line bg-panel text-left shadow-[var(--shadow)]"
+        >
+          <span className="flex items-center gap-2 border-b border-line px-2.5 py-1">
+            <span className="atlas-label">{ev.category.replaceAll("_", " ")}</span>
+            <span className="truncate font-mono text-[10.5px] text-support">{ev.path}:{ev.start_line}</span>
+            <span className={cn("ml-auto font-mono text-[10px]", ev.verified_now ? "text-ok" : "text-bad")}>{ev.verified_now ? "verified" : "not verified"}</span>
+          </span>
+          {excerpt ? (
+            <span className="block bg-code px-2.5 py-1.5 font-mono text-[11px] leading-[17px] whitespace-pre text-fg-2">
+              {excerpt.map((l, i) => (
+                <span key={i} className="block truncate">
+                  <span className="mr-2 inline-block w-7 text-right text-fg-3 select-none">{ev.start_line + i}</span>
+                  {l}
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="block px-2.5 py-1.5 text-[11.5px] text-fg-3">Click to open the cited lines.</span>
+          )}
+        </span>
       )}
-    >
-      <FileCode className="h-3 w-3 shrink-0" aria-hidden />
-      <span className="truncate">{label}</span>
-    </button>
+    </span>
   );
 }
 

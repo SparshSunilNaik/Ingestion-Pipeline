@@ -46,6 +46,8 @@ export function makeNav(overrides: Partial<WorkspaceNav> = {}, params: Record<st
     selection: null,
     setSelection: vi.fn(),
     assistantOpen: true,
+    focusMode: false,
+    toggleFocus: vi.fn(),
     setAssistantOpen: vi.fn(),
     param: (name: string) => params[name] ?? null,
     setParams: vi.fn(),

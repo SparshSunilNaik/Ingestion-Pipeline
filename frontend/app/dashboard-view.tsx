@@ -3,16 +3,18 @@
 import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { api, recentConversations, type Repository } from "@/lib/api";
+import { type AgentStatus, api, recentConversations, type Repository } from "@/lib/api";
 import { useAsync, useNow, usePref } from "@/lib/hooks";
+import { HeroMap } from "@/components/atlas/hero-map";
 import { SubmitRepository } from "@/components/submit-repository";
-import { Badge, Button, ErrorState, LanguageBar, ShortSha, SkeletonRows, StatusBadge, StatusDot, formatBytes, formatTime, timeAgo } from "@/components/ui";
+import { Badge, Button, ErrorState, LANG_COLORS, LanguageBar, ShortSha, SkeletonRows, StatusBadge, StatusDot, formatBytes, formatTime, timeAgo } from "@/components/ui";
 
 export function DashboardView() {
   const repos = useAsync(() => api.repositories(), [], 8000);
   const jobs = useAsync(() => api.jobs(30), [], 3000);
   const agent = useAsync(() => api.agentStatus().catch(() => null), []);
-  const convs = useAsync(() => recentConversations(6).catch(() => []), []);
+  const ready = useAsync(() => api.ready().catch(() => null), [], 15000);
+  const convs = useAsync(() => recentConversations(5).catch(() => []), []);
   const [lastSnapshot] = usePref("ip.lastSnapshot", "");
   const now = useNow();
 
@@ -20,144 +22,169 @@ export function DashboardView() {
   if (!repos.data) return <div className="mx-auto max-w-[900px] p-6"><SkeletonRows rows={8} /></div>;
   const allJobs = jobs.data ?? [];
   const inProgress = allJobs.filter((j) => j.status === "running" || j.status === "queued");
-  const recentFailures = allJobs.filter((j) => j.status === "failed" && j.kind === "ingest").slice(0, 3);
-  const last = (repos.data ?? []).flatMap((r) => r.snapshots.map((s) => ({ r, s }))).find(({ s }) => String(s.id) === lastSnapshot && s.status === "ready");
-
-  if (repos.data.length === 0 && inProgress.length === 0) return <FirstRun agentReady={!!agent.data?.agent_ready} model={agent.data?.selected_model} />;
+  const recentFailures = allJobs.filter((j) => j.status === "failed" && j.kind === "ingest").slice(0, 2);
+  const withSnap = repos.data.filter((r) => r.current);
+  const last = withSnap.flatMap((r) => r.snapshots.map((s) => ({ r, s }))).find(({ s }) => String(s.id) === lastSnapshot && s.status === "ready") ?? (withSnap[0]?.current ? { r: withSnap[0], s: withSnap[0].current } : null);
+  const firstRun = repos.data.length === 0 && inProgress.length === 0;
 
   return (
-    <div className="mx-auto flex max-w-[1280px] flex-col gap-6 px-4 py-6">
-      <section aria-labelledby="analyse-heading" className="rounded-xl border border-line bg-panel px-5 py-4">
-        <h1 id="analyse-heading" className="text-[15px] font-semibold">Analyse a repository</h1>
-        <p className="mt-0.5 mb-3 text-[12.5px] text-fg-3">Paste a public GitHub URL. Already-analysed commits open instantly from cache.</p>
-        <SubmitRepository />
-      </section>
-
-      {(inProgress.length > 0 || recentFailures.length > 0) && (
-        <section aria-label="Analyses in progress" className="space-y-1.5">
-          {inProgress.map((j) => (
-            <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent-soft px-4 py-2.5 hover:border-accent">
-              <StatusBadge status={j.status} />
-              <span className="min-w-0 truncate font-mono text-[13px]">{j.kind === "ingest" ? j.requested_url.replace("https://github.com/", "") : `${j.kind === "qa" ? "Question" : "AI report"} · snapshot ${j.snapshot_id}`}</span>
-              <span className="truncate text-[12px] text-fg-2">{j.message ?? j.stage}</span>
-              <span className="ml-auto shrink-0 text-[12px] text-accent">View progress →</span>
-            </Link>
-          ))}
-          {recentFailures.map((j) => (
-            <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-lg border border-bad/30 bg-bad-soft px-4 py-2 hover:border-bad">
-              <StatusBadge status={j.status} />
-              <span className="min-w-0 truncate font-mono text-[12.5px]">{j.requested_url.replace("https://github.com/", "")}</span>
-              <span className="truncate text-[12px] text-fg-2">{j.error_message}</span>
-              <span className="ml-auto shrink-0 text-[11.5px] text-fg-3">{now ? timeAgo(j.created_at, now) : ""}</span>
-            </Link>
-          ))}
-        </section>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section aria-labelledby="repos-heading" className="min-w-0">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 id="repos-heading" className="text-[13px] font-semibold">Repositories</h2>
-            <Link href="/repositories" className="text-[12px] text-accent hover:underline">All repositories</Link>
-          </div>
-          <div className="overflow-hidden rounded-xl border border-line bg-panel">
-            <RepoTable repos={repos.data.slice(0, 10)} now={now} onChanged={repos.reload} />
-          </div>
-        </section>
-        <aside className="flex min-w-0 flex-col gap-6">
-          {last && (
-            <section aria-labelledby="continue-heading">
-              <h2 id="continue-heading" className="mb-2 text-[13px] font-semibold">Continue where you left off</h2>
-              <Link href={`/snapshots/${last.s.id}`} className="block rounded-xl border border-line bg-panel px-4 py-3 hover:border-accent">
-                <div className="truncate text-[14px] font-semibold">{last.r.owner}/{last.r.name}</div>
-                <div className="mt-1 flex items-center gap-2 text-[12px] text-fg-3">
-                  <ShortSha sha={last.s.commit_sha} /> analysed {formatTime(last.s.acquired_at)}
-                </div>
-                <div className="mt-2 text-[12.5px] text-accent">Reopen workspace — your open tabs are restored →</div>
-              </Link>
-            </section>
-          )}
-          <section aria-labelledby="inv-heading">
-            <h2 id="inv-heading" className="mb-2 text-[13px] font-semibold">Recent investigations</h2>
-            {convs.data && convs.data.length === 0 && (
-              <p className="rounded-xl border border-dashed border-line px-4 py-3 text-[12.5px] text-fg-3">Questions you ask the assistant in a workspace are saved here, per commit.</p>
-            )}
-            <ul className="space-y-1.5">
-              {(convs.data ?? []).map((c) => (
-                <li key={c.id}>
-                  <Link href={`/snapshots/${c.snapshot_id}?view=overview&c=${c.id}`} className="block rounded-lg border border-line bg-panel px-3 py-2 hover:border-accent">
-                    <div className="truncate text-[12.5px]">{c.title}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-fg-3">
-                      <span className="truncate">{c.repository}</span>
-                      <ShortSha sha={c.commit_sha} />
-                      <span className="shrink-0">{c.questions} question{c.questions === 1 ? "" : "s"}</span>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section className="text-[12px] text-fg-3">
-            <div className="flex items-center gap-1.5">
-              <StatusDot tone={!agent.data ? "neutral" : agent.data.agent_ready ? "ok" : "warn"} />
-              {agent.data?.agent_ready ? (
-                <span>AI assistant ready · <span className="font-mono">{agent.data.selected_model}</span></span>
-              ) : (
-                <span>AI assistant unavailable — static analysis still works. <Link href="/settings" className="underline">Settings</Link></span>
+    <div className="atlas-grid min-h-full">
+      <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-16 lg:px-10">
+        <section className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]" aria-labelledby="atlas-title">
+          <div className="atlas-in">
+            <div className="atlas-label flex items-center gap-2"><span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" aria-hidden /> code atlas · repository intelligence</div>
+            <h1 id="atlas-title" className="atlas-display mt-4 text-[clamp(44px,5.4vw,76px)] text-fg">
+              Explore software
+              <br />
+              like a <em className="text-accent">living system.</em>
+            </h1>
+            <p className="mt-5 max-w-[540px] text-[15px] leading-relaxed text-fg-2">
+              Paste a public GitHub repository. Code Atlas maps its files, symbols, calls and routes from a pinned commit, traces how it runs, and answers questions with citations to the exact lines — all on this machine.
+            </p>
+            <div className="mt-7 max-w-[620px] rounded-xl border border-line bg-panel p-3 shadow-[var(--shadow)]">
+              <SubmitRepository autoFocus={firstRun} />
+              {firstRun && (
+                <p className="px-1 text-[12px] text-fg-3">
+                  Try <ExampleUrl url="https://github.com/pallets/itsdangerous" /> — small, about a minute.
+                </p>
               )}
             </div>
+            <EngineStatus agent={agent.data} worker={ready.data?.worker_running} />
+            {last && (
+              <Link href={`/snapshots/${last.s.id}`} className="group mt-6 inline-flex items-baseline gap-2 border-b border-line pb-1 hover:border-[var(--accent-line)]">
+                <span className="atlas-label">resume</span>
+                <span className="text-[14px] font-medium text-fg group-hover:text-accent">{last.r.owner}/{last.r.name}</span>
+                <span className="font-mono text-[11px] text-fg-3">@ {last.s.commit_sha.slice(0, 7)} — your tabs are restored →</span>
+              </Link>
+            )}
+          </div>
+          <div className="atlas-fade relative hidden lg:block" style={{ animationDelay: "120ms" }}>
+            <div className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(closest-side,var(--accent-soft),transparent)] opacity-60" aria-hidden />
+            <HeroMap snapshotId={last?.s.id ?? null} caption={last ? `last explored · ${last.r.owner}/${last.r.name} @ ${last.s.commit_sha.slice(0, 10)} · real import map` : "your first map appears here"} />
+          </div>
+        </section>
+
+        {(inProgress.length > 0 || recentFailures.length > 0) && (
+          <section aria-label="Analyses in progress" className="mt-12 space-y-1.5">
+            {inProgress.map((j) => (
+              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-lg border border-[var(--accent-line)] bg-accent-soft px-4 py-2.5 hover:border-accent">
+                <StatusBadge status={j.status} />
+                <span className="min-w-0 truncate font-mono text-[13px]">{j.kind === "ingest" ? j.requested_url.replace("https://github.com/", "") : `${j.kind === "qa" ? "Question" : "AI report"} · snapshot ${j.snapshot_id}`}</span>
+                <span className="truncate text-[12px] text-fg-2">{j.message ?? j.stage}</span>
+                <span className="ml-auto shrink-0 font-mono text-[11.5px] text-accent">progress →</span>
+              </Link>
+            ))}
+            {recentFailures.map((j) => (
+              <Link key={j.id} href={`/jobs/${j.id}`} className="flex items-center gap-3 rounded-lg border border-bad/30 bg-bad-soft px-4 py-2 hover:border-bad">
+                <StatusBadge status={j.status} />
+                <span className="min-w-0 truncate font-mono text-[12.5px]">{j.requested_url.replace("https://github.com/", "")}</span>
+                <span className="truncate text-[12px] text-fg-2">{j.error_message}</span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-fg-3">{now ? timeAgo(j.created_at, now) : ""}</span>
+              </Link>
+            ))}
           </section>
-        </aside>
+        )}
+
+        {!firstRun && (
+          <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <section aria-labelledby="repos-heading" className="min-w-0">
+              <div className="mb-3 flex items-baseline justify-between border-b border-line pb-2">
+                <h2 id="repos-heading" className="atlas-label">recent repositories · {repos.data.length}</h2>
+                <Link href="/repositories" className="font-mono text-[11px] text-fg-3 hover:text-accent">all →</Link>
+              </div>
+              <ul className="divide-y divide-line">
+                {repos.data.slice(0, 8).map((r) => (
+                  <li key={r.id}>
+                    <RepoRow repo={r} now={now} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <aside className="min-w-0 space-y-10">
+              <section aria-labelledby="inv-heading">
+                <div className="mb-3 border-b border-line pb-2">
+                  <h2 id="inv-heading" className="atlas-label">recent investigations</h2>
+                </div>
+                {convs.data && convs.data.length === 0 && <p className="text-[12.5px] text-fg-3">Questions you ask in a workspace are kept here, per commit.</p>}
+                <ul className="space-y-3">
+                  {(convs.data ?? []).map((c) => (
+                    <li key={c.id}>
+                      <Link href={`/snapshots/${c.snapshot_id}?view=overview&c=${c.id}`} className="group block">
+                        <div className="line-clamp-2 text-[13px] text-fg group-hover:text-accent">{c.title}</div>
+                        <div className="mt-0.5 font-mono text-[10.5px] text-fg-3">{c.repository} @ {c.commit_sha.slice(0, 7)} · {c.questions} question{c.questions === 1 ? "" : "s"}</div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </aside>
+          </div>
+        )}
+
+        {firstRun && (
+          <ol className="mt-16 grid gap-8 border-t border-line pt-8 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Acquire safely", "A shallow clone of the exact commit. Hooks, submodules and LFS are off; nothing in the repository is ever run."],
+              ["Map statically", "Python, TypeScript/JavaScript, Go and Java become symbols, imports, calls, inheritance, routes and dependencies."],
+              ["Explore the map", "Follow the graph, trace execution, see what a change could reach — every fact links to its lines."],
+              ["Ask with evidence", "The assistant answers from evidence the backend retrieves; each citation is re-verified against the commit."],
+            ].map(([t, d], i) => (
+              <li key={t}>
+                <div className="font-mono text-[11px] text-accent">0{i + 1}</div>
+                <div className="mt-1 text-[14px] font-semibold">{t}</div>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-fg-3">{d}</p>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );
 }
 
-function FirstRun({ agentReady, model }: { agentReady: boolean; model?: string }) {
-  const steps = [
-    { title: "Acquire safely", text: "A shallow clone of the exact commit. Hooks, submodules and LFS are disabled; nothing in the repository is ever executed." },
-    { title: "Analyse statically", text: "Python, TypeScript/JavaScript, Go and Java are parsed into symbols, imports, calls, inheritance, routes and dependencies." },
-    { title: "Explore with evidence", text: "Browse the architecture, trace execution, check what a change could affect — every fact links to exact source lines." },
-    { title: "Ask questions", text: "An AI assistant answers from evidence the backend retrieves, and every citation is verified against the commit." },
-  ];
+function EngineStatus({ agent, worker }: { agent: AgentStatus | null | undefined; worker: boolean | undefined }) {
   return (
-    <div className="mx-auto flex min-h-full max-w-[860px] flex-col justify-center px-6 py-12">
-      <h1 className="text-[28px] leading-tight font-semibold tracking-tight">Understand any GitHub repository.</h1>
-      <p className="mt-3 max-w-[640px] text-[15px] leading-relaxed text-fg-2">
-        Paste a public repository and get an evidence-backed map of what it does, how it is built and how its code connects — then ask questions about it. Everything runs on this machine.
-      </p>
-      <div className="mt-7 rounded-xl border border-line bg-panel p-4 shadow-sm">
-        <SubmitRepository autoFocus />
-        <p className="mt-1 text-[12px] text-fg-3">
-          Try <ExampleUrl url="https://github.com/pallets/itsdangerous" /> (small, about a minute).
-        </p>
+    <dl className="mt-5 flex flex-wrap gap-x-6 gap-y-1.5 font-mono text-[11px]">
+      <div className="flex items-center gap-1.5">
+        <dt className="text-fg-3">worker</dt>
+        <dd className="flex items-center gap-1.5 text-fg-2"><StatusDot tone={worker === undefined ? "neutral" : worker ? "ok" : "warn"} />{worker === undefined ? "…" : worker ? "running" : "stopped"}</dd>
       </div>
-      <ol className="mt-10 grid gap-5 sm:grid-cols-2">
-        {steps.map((s, i) => (
-          <li key={s.title} className="flex gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent">{i + 1}</span>
-            <div>
-              <div className="text-[13.5px] font-semibold">{s.title}</div>
-              <p className="mt-0.5 text-[12.5px] leading-relaxed text-fg-3">{s.text}</p>
-            </div>
-          </li>
+      <div className="flex items-center gap-1.5">
+        <dt className="text-fg-3">model</dt>
+        <dd className="flex items-center gap-1.5 text-fg-2">
+          <StatusDot tone={!agent ? "neutral" : agent.agent_ready ? "ok" : "warn"} />
+          {agent ? (agent.agent_ready ? agent.selected_model : <Link href="/settings" className="text-warn underline-offset-2 hover:underline">unavailable — static analysis still works</Link>) : "…"}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function RepoRow({ repo: r, now }: { repo: Repository; now: number }) {
+  const langs = Object.entries(r.current_summary?.languages_by_bytes ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return (
+    <Link href={r.current ? `/snapshots/${r.current.id}` : `/jobs/${r.latest_job?.id ?? ""}`} className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-1 py-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+      <div className="min-w-0">
+        <div className="truncate text-[14px] font-medium text-fg group-hover:text-accent">
+          {r.owner}/<span className="font-semibold">{r.name}</span>
+        </div>
+        <div className="mt-0.5 font-mono text-[10.5px] text-fg-3">
+          {r.current ? `${r.current.commit_sha.slice(0, 10)} · ${r.current_summary?.analyzed_files ?? "?"} files · analyzer ${r.current.analyzer_version}` : r.latest_job ? `${r.latest_job.status} · ${r.latest_job.stage}` : "not analysed"}
+        </div>
+      </div>
+      <div className="hidden gap-3 font-mono text-[10.5px] text-fg-3 sm:flex">
+        {langs.map(([l]) => (
+          <span key={l} className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full" style={{ background: LANG_COLORS[l] ?? "var(--fg-3)" }} aria-hidden />{l}</span>
         ))}
-      </ol>
-      <p className="mt-10 flex items-center gap-1.5 text-[12px] text-fg-3">
-        <StatusDot tone={agentReady ? "ok" : "warn"} />
-        {agentReady ? <>AI assistant ready with <span className="font-mono">{model}</span>.</> : <>The AI assistant is not available right now; analysis and exploration work without it. <Link href="/settings" className="underline">Settings</Link></>}
-      </p>
-    </div>
+      </div>
+      <div className="text-right font-mono text-[10.5px] text-fg-3">{now ? timeAgo(r.updated_at, now) : formatTime(r.updated_at)}</div>
+    </Link>
   );
 }
 
 function ExampleUrl({ url }: { url: string }) {
   return (
-    <button
-      type="button"
-      className="font-mono text-accent hover:underline"
-      onClick={() => window.dispatchEvent(new CustomEvent("ip:fill-url", { detail: url }))}
-    >
+    <button type="button" className="font-mono text-accent underline-offset-2 hover:underline" onClick={() => window.dispatchEvent(new CustomEvent("ip:fill-url", { detail: url }))}>
       {url.replace("https://github.com/", "")}
     </button>
   );

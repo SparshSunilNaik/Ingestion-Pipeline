@@ -1,14 +1,13 @@
 "use client";
 
-import { Bot, ChevronDown, CircleExclamationPoint, History, LoaderCircle, Plus, Send, Settings2, Square, User, X } from "lucide-react";
+import { Bot, ChevronDown, CircleExclamationPoint, Crosshair, History, LoaderCircle, Plus, Send, Settings2, Square, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api, type AgentStatus, type Conversation, type Message } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { ACTIONS, actionsFor, questionFor } from "@/components/workspace/actions";
-import { ClaimList } from "@/components/workspace/claims";
-import { useNav } from "@/components/workspace/nav";
-import { Badge, Button, ErrorState, IconButton, Kbd, SkeletonRows, cn, formatTime } from "@/components/ui";
+import { EvidenceList, useNav } from "@/components/workspace/nav";
+import { Badge, BasisBadge, Button, ErrorState, IconButton, Kbd, SkeletonRows, cn, formatTime } from "@/components/ui";
 
 const GROUNDING: Record<string, { label: string; tone: "ok" | "warn" | "bad" | "neutral"; help: string }> = {
   grounded: { label: "grounded in source", tone: "ok", help: "Every claim cites evidence that was re-verified against this commit" },
@@ -127,7 +126,12 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, pending?.status]);
 
-  async function send(text: string) {
+  // Attached context: the current selection, unless the user detached it for this selection.
+  const sel = nav.selection;
+  const [detachedKey, setDetachedKey] = useState<string | null>(null);
+  const attached = sel && sel.key !== detachedKey ? sel : null;
+
+  async function send(text: string, contextKey: string | null = attached?.key ?? null) {
     const content = text.trim();
     if (content.length < 2 || sending) return;
     setSending(true);
@@ -138,7 +142,7 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
         const c = await api.createConversation(nav.snapshotId, chosenModel || undefined);
         id = c.id;
       }
-      await api.ask(id, content);
+      await api.ask(id, content, contextKey);
       setDraft("");
       setPoll(true);
       if (id !== conversationId) onCreated(id);
@@ -163,7 +167,6 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
     return () => setAsker(null);
   });
 
-  const sel = nav.selection;
   const title = conv.data?.title ?? (conversationId ? conversations?.find((c) => c.id === conversationId)?.title : null);
 
   return (
@@ -204,10 +207,21 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
       <div className="shrink-0 border-t border-line p-2.5">
         {sel && (
           <div className="mb-2">
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] text-fg-3">
-              <span className="shrink-0">Context:</span>
-              <span className="min-w-0 truncate font-mono text-fg-2" title={sel.key}>{sel.label}</span>
-              {sel.path && sel.kind !== "file" && <span className="hidden min-w-0 truncate xl:inline">{sel.path}</span>}
+            <div className="mb-1.5 flex items-center gap-1.5">
+              {attached ? (
+                <span className="inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border border-[var(--accent-line)] bg-accent-soft py-0.5 pr-1 pl-2" title={`Sent with your question and validated by the backend: ${attached.key}`}>
+                  <Crosshair className="h-3 w-3 shrink-0 text-accent" aria-hidden />
+                  <span className="atlas-label !text-accent">attached</span>
+                  <span className="min-w-0 truncate font-mono text-[11.5px] text-fg">{attached.label}</span>
+                  <button type="button" onClick={() => setDetachedKey(attached.key)} aria-label={`Detach ${attached.label}`} className="rounded p-0.5 text-fg-3 hover:bg-panel-3 hover:text-fg">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ) : (
+                <button type="button" onClick={() => setDetachedKey(null)} className="inline-flex items-center gap-1 rounded-md border border-dashed border-line px-2 py-0.5 font-mono text-[11px] text-fg-3 hover:border-[var(--accent-line)] hover:text-fg">
+                  <Crosshair className="h-3 w-3" aria-hidden /> attach {sel.label}
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-1">
               {actionsFor(sel).map((id) => {
@@ -216,7 +230,7 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
                   <button
                     key={id}
                     disabled={!ready || !!pending || sending}
-                    onClick={() => void send(questionFor(id, sel))}
+                    onClick={() => void send(questionFor(id, sel), sel.key)}
                     className="inline-flex h-6 items-center gap-1 rounded-full border border-line px-2 text-[11.5px] text-fg-2 hover:border-accent hover:text-fg disabled:opacity-50"
                   >
                     <A.icon className="h-3 w-3" aria-hidden /> {A.label}
@@ -264,10 +278,36 @@ function Thread({ conversationId, agent, onCreated, conversations }: { conversat
 }
 
 function UserTurn({ m }: { m: Message }) {
+  const ctx = m.payload?.context;
   return (
-    <div className="flex gap-2">
-      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-panel-3 text-fg-2"><User className="h-3 w-3" aria-hidden /></span>
-      <p className="min-w-0 pt-px text-[13px] font-medium whitespace-pre-wrap">{m.content}</p>
+    <header className="atlas-in border-t border-line pt-3 first:border-t-0 first:pt-0">
+      <span className="atlas-label">question</span>
+      <h3 className="mt-0.5 text-[14px] leading-snug font-semibold whitespace-pre-wrap text-fg">{m.content}</h3>
+      {ctx && (
+        <span className="mt-1 inline-flex max-w-full items-center gap-1 font-mono text-[11px] text-fg-3" title={ctx.key}>
+          <Crosshair className="h-3 w-3 shrink-0 text-accent" aria-hidden /> about <span className="truncate text-fg-2">{ctx.label ?? ctx.key}</span>
+        </span>
+      )}
+    </header>
+  );
+}
+
+const QA_STAGES: Record<string, string> = {
+  queued: "Waiting for the worker",
+  starting: "Starting",
+  retrieving: "Retrieving evidence from the snapshot",
+  investigating: "Reading code and writing the answer",
+  validating: "Re-verifying every citation",
+};
+
+function PendingAnswer({ jobId, onCancel }: { jobId: number | null; onCancel: () => void }) {
+  const job = useAsync(() => (jobId ? api.job(jobId) : Promise.resolve(null)), [jobId], 1500);
+  const stage = job.data?.stage ?? "queued";
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-line bg-panel-2 px-3 py-2 text-[12.5px] text-fg-2" role="status">
+      <LoaderCircle className="h-3.5 w-3.5 animate-spin text-accent" aria-hidden />
+      <span>{QA_STAGES[stage] ?? stage}…</span>
+      <button onClick={onCancel} className="ml-auto text-[11.5px] text-fg-3 underline-offset-2 hover:text-fg hover:underline">Cancel</button>
     </div>
   );
 }
@@ -279,53 +319,59 @@ function AssistantTurn({ m, onRetry, onCancel }: { m: Message; onRetry: () => vo
   const claims = p.claims ?? [];
   const supported = claims.filter((c) => c.basis !== "unsupported").length;
   return (
-    <div className="flex gap-2" data-testid="assistant-turn">
-      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-accent-soft text-accent"><Bot className="h-3 w-3" aria-hidden /></span>
-      <div className="min-w-0 flex-1">
-        {m.status === "pending" && (
-          <div className="flex items-center gap-2 rounded-md border border-line bg-panel-2 px-2.5 py-2 text-[12.5px] text-fg-3" role="status">
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> Retrieving evidence and reading code…
-            <button onClick={onCancel} className="ml-auto text-[11.5px] underline-offset-2 hover:text-fg hover:underline">Cancel</button>
-          </div>
-        )}
-        {(m.status === "failed" || m.status === "cancelled") && (
-          <ErrorState error={m.status === "cancelled" ? "Investigation cancelled." : m.content || "The investigation failed."} onRetry={onRetry} />
-        )}
-        {m.status === "complete" && (
-          <>
-            <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{m.content}</p>
-            {claims.length > 0 && (
-              <div className="mt-2">
-                <div className="mb-1 flex items-center gap-1.5 text-[11px] text-fg-3">
-                  {g && <Badge tone={g.tone} title={g.help}>{g.label}</Badge>}
-                  <span>{supported} of {claims.length} statements cite verified source</span>
-                </div>
-                <ClaimList claims={claims} dense />
+    <article className="atlas-fade -mt-1" data-testid="assistant-turn">
+      {m.status === "pending" && <PendingAnswer jobId={m.job_id} onCancel={onCancel} />}
+      {(m.status === "failed" || m.status === "cancelled") && (
+        <ErrorState error={m.status === "cancelled" ? "Investigation cancelled." : m.content || "The investigation failed."} onRetry={onRetry} />
+      )}
+      {m.status === "complete" && (
+        <>
+          <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-fg">{m.content}</p>
+          {claims.length > 0 && (
+            <section className="mt-3">
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span className="atlas-label">evidence</span>
+                {g && <Badge tone={g.tone} title={g.help}>{g.label}</Badge>}
+                <span className="font-mono text-[10.5px] text-fg-3">{supported}/{claims.length} statements cite verified source</span>
               </div>
-            )}
-            {claims.length === 0 && g && <div className="mt-1.5"><Badge tone={g.tone} title={g.help}>{g.label}</Badge></div>}
-            {p.limitations && p.limitations.length > 0 && (
-              <div className="mt-2 rounded-md bg-panel-2 px-2.5 py-1.5">
-                <div className="text-[11px] font-semibold tracking-wide text-fg-3 uppercase">Uncertainty</div>
-                <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-[12px] text-fg-2">{p.limitations.map((l) => <li key={l}>{l}</li>)}</ul>
-              </div>
-            )}
-            <button onClick={() => setDetails(!details)} aria-expanded={details} className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] text-fg-3 hover:text-fg">
-              <ChevronDown className={cn("h-3 w-3 transition-transform", details && "rotate-180")} aria-hidden /> How this was answered
-            </button>
-            {details && (
-              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[11px] text-fg-2">
-                <dt className="text-fg-3">model</dt><dd>{p.model ?? "—"}</dd>
-                <dt className="text-fg-3">model calls</dt><dd>{p.usage?.model_calls ?? "—"}</dd>
-                <dt className="text-fg-3">evidence reads</dt><dd>{p.usage?.gateway?.requests ?? "—"}</dd>
-                <dt className="text-fg-3">latency</dt><dd>{p.usage?.latency_ms ? `${(p.usage.latency_ms / 1000).toFixed(1)} s` : "—"}</dd>
-                <dt className="text-fg-3">intents</dt><dd>{p.intents?.join(", ") || "—"}</dd>
-                <dt className="text-fg-3">grounding</dt><dd>{p.grounding ?? "—"}</dd>
-              </dl>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+              <ol className="space-y-1.5">
+                {claims.map((c, i) => (
+                  <li key={i} className="grid grid-cols-[18px_minmax(0,1fr)] gap-1.5">
+                    <span className="pt-0.5 text-right font-mono text-[10.5px] text-fg-3">{i + 1}</span>
+                    <div className="min-w-0">
+                      <p className={cn("text-[12.5px] leading-relaxed", c.basis === "unsupported" ? "text-fg-3 line-through decoration-bad/50" : "text-fg-2")}>{c.statement}</p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                        {c.basis !== "source_evidence" && <BasisBadge basis={c.basis} />}
+                        <EvidenceList ids={c.evidence_ids} max={4} />
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+          {claims.length === 0 && g && <div className="mt-1.5"><Badge tone={g.tone} title={g.help}>{g.label}</Badge></div>}
+          {p.limitations && p.limitations.length > 0 && (
+            <section className="mt-3 border-l-2 border-warn/60 pl-2.5">
+              <span className="atlas-label">uncertainty</span>
+              <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-[12px] text-fg-2">{p.limitations.map((l) => <li key={l}>{l}</li>)}</ul>
+            </section>
+          )}
+          <button onClick={() => setDetails(!details)} aria-expanded={details} className="mt-2 inline-flex items-center gap-0.5 font-mono text-[10.5px] text-fg-3 hover:text-fg">
+            <ChevronDown className={cn("h-3 w-3 transition-transform", details && "rotate-180")} aria-hidden /> how this was answered
+          </button>
+          {details && (
+            <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[11px] text-fg-2">
+              <dt className="text-fg-3">model</dt><dd>{p.model ?? "—"}</dd>
+              <dt className="text-fg-3">model calls</dt><dd>{p.usage?.model_calls ?? "—"}</dd>
+              <dt className="text-fg-3">evidence reads</dt><dd>{p.usage?.gateway?.requests ?? "—"}</dd>
+              <dt className="text-fg-3">latency</dt><dd>{p.usage?.latency_ms ? `${(p.usage.latency_ms / 1000).toFixed(1)} s` : "—"}</dd>
+              <dt className="text-fg-3">intents</dt><dd>{p.intents?.join(", ") || "—"}</dd>
+              <dt className="text-fg-3">grounding</dt><dd>{p.grounding ?? "—"}</dd>
+            </dl>
+          )}
+        </>
+      )}
+    </article>
   );
 }

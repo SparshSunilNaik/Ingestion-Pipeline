@@ -438,6 +438,8 @@ export interface Message {
     intents?: string[];
     usage?: { model_calls?: number; latency_ms?: number; gateway?: { requests: number } };
     error?: string;
+    /** On questions: the context the user attached (validated by the backend). */
+    context?: { key: string; kind: string | null; label: string | null; path: string | null };
   };
 }
 
@@ -503,8 +505,12 @@ export const api = {
   conversations: (snapshotId: number) => request<Conversation[]>(`/api/snapshots/${snapshotId}/conversations`),
   createConversation: (snapshotId: number, model?: string) => request<Conversation>(`/api/snapshots/${snapshotId}/conversations`, { method: "POST", body: JSON.stringify({ model }) }),
   conversation: (id: number) => request<Conversation>(`/api/conversations/${id}`),
-  ask: (conversationId: number, content: string) =>
-    request<{ question_id: number; reply_id: number; job: Job }>(`/api/conversations/${conversationId}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  /** `contextKey`: the graph node the user attached; the backend validates it belongs to the conversation's snapshot. */
+  ask: (conversationId: number, content: string, contextKey?: string | null) =>
+    request<{ question_id: number; reply_id: number; job: Job }>(`/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(contextKey ? { content, context_key: contextKey } : { content }),
+    }),
   agentStatus: () => request<AgentStatus>("/api/agent/status"),
   agentModels: () => request<AgentModel[]>("/api/agent/models"),
   selectModel: (model: string) => request<AgentStatus>("/api/agent/model", { method: "PUT", body: JSON.stringify({ model }) }),

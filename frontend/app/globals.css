@@ -1,79 +1,88 @@
 @import "tailwindcss";
 
 /*
- * Design system — dark-first engineering workbench.
- * Graphite surfaces, one restrained teal accent, semantic colours used only for meaning.
+ * CODE ATLAS design system — "Survey Instrument" (docs/DESIGN_DIRECTION.md).
+ * Graphite chart paper, one signal colour (lime) that only ever means focus / selection / primary action.
  */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root,
 [data-theme="dark"] {
-  --bg: #0d0f12;
-  --panel: #13161b;
-  --panel-2: #191d23;
-  --panel-3: #20252d;
-  --line: #262c35;
-  --line-strong: #343b46;
-  --fg: #e3e7ec;
-  --fg-2: #aab3be;
-  --fg-3: #8b95a1;
-  --accent: #3cc6b8;
-  --accent-fg: #071312;
-  --accent-soft: rgba(60, 198, 184, 0.13);
-  --ok: #4cc38a;
-  --ok-soft: rgba(76, 195, 138, 0.13);
-  --warn: #e3a948;
-  --warn-soft: rgba(227, 169, 72, 0.14);
-  --bad: #ef6b6b;
-  --bad-soft: rgba(239, 107, 107, 0.14);
-  --info: #6aa7ff;
-  --info-soft: rgba(106, 167, 255, 0.14);
-  --code-bg: #0f1216;
-  --hl-line: rgba(60, 198, 184, 0.12);
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
-  --k-file: #6aa7ff;
-  --k-module: #8fa3b8;
-  --k-class: #e3a948;
-  --k-function: #3cc6b8;
-  --k-method: #78c27a;
-  --k-route: #ef8bd0;
-  --k-package: #b39ddb;
-  --k-unresolved: #ef6b6b;
+  /* CODE ATLAS · Survey Instrument (docs/DESIGN_DIRECTION.md) */
+  --bg: #101218;
+  --panel: #1b202a;
+  --panel-2: #20262f;
+  --panel-3: #252c37;
+  --line: #343c4b;
+  --line-strong: #465062;
+  --fg: #e9eef5;
+  --fg-2: #a3acbc;
+  --fg-3: #959eae;
+  --accent: #d4fa73;
+  --accent-fg: #101218;
+  --accent-soft: rgba(212, 250, 115, 0.11);
+  --accent-line: rgba(212, 250, 115, 0.45);
+  --support: #8b9cba;
+  --ok: #8fe3a8;
+  --ok-soft: rgba(143, 227, 168, 0.12);
+  --warn: #f2c46d;
+  --warn-soft: rgba(242, 196, 109, 0.13);
+  --bad: #ff8a80;
+  --bad-soft: rgba(255, 138, 128, 0.13);
+  --info: #9db4e0;
+  --info-soft: rgba(139, 156, 186, 0.16);
+  --code-bg: #12151c;
+  --hl-line: rgba(212, 250, 115, 0.08);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  --grid: rgba(139, 156, 186, 0.07);
+  --k-file: #8b9cba;
+  --k-module: #6f7d96;
+  --k-class: #f2c46d;
+  --k-function: #9fd8ff;
+  --k-method: #7fdbca;
+  --k-route: #ff9ec7;
+  --k-package: #b7a6ff;
+  --k-test: #a3acbc;
+  --k-unresolved: #ff8a80;
   color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --bg: #f4f5f7;
+  --bg: #f3f4f1;
   --panel: #ffffff;
-  --panel-2: #f7f8fa;
-  --panel-3: #eef0f3;
-  --line: #e1e4e9;
-  --line-strong: #cdd2d9;
-  --fg: #171a1f;
-  --fg-2: #4a525c;
-  --fg-3: #5d6671;
-  --accent: #0f8f84;
+  --panel-2: #f7f8f5;
+  --panel-3: #eceee8;
+  --line: #d9ddd3;
+  --line-strong: #c3c8bc;
+  --fg: #14171d;
+  --fg-2: #464e5a;
+  --fg-3: #5b6370;
+  --accent: #4b6a00;
   --accent-fg: #ffffff;
-  --accent-soft: rgba(15, 143, 132, 0.1);
-  --ok: #1d8a55;
-  --ok-soft: rgba(29, 138, 85, 0.1);
-  --warn: #a8690a;
-  --warn-soft: rgba(168, 105, 10, 0.1);
-  --bad: #c53b3b;
-  --bad-soft: rgba(197, 59, 59, 0.1);
-  --info: #2f6fd6;
-  --info-soft: rgba(47, 111, 214, 0.1);
-  --code-bg: #fbfbfc;
-  --hl-line: rgba(15, 143, 132, 0.12);
-  --shadow: 0 8px 30px rgba(20, 24, 31, 0.12);
-  --k-file: #2f6fd6;
-  --k-module: #5d6b7a;
-  --k-class: #a8690a;
-  --k-function: #0f8f84;
-  --k-method: #3d8a3f;
-  --k-route: #b8408f;
-  --k-package: #7451b5;
-  --k-unresolved: #c53b3b;
+  --accent-soft: rgba(166, 214, 40, 0.2);
+  --accent-line: rgba(75, 106, 0, 0.5);
+  --support: #50607d;
+  --ok: #1f7a46;
+  --ok-soft: rgba(31, 122, 70, 0.1);
+  --warn: #8a5600;
+  --warn-soft: rgba(168, 105, 10, 0.12);
+  --bad: #b3261e;
+  --bad-soft: rgba(179, 38, 30, 0.09);
+  --info: #3d5a8c;
+  --info-soft: rgba(61, 90, 140, 0.1);
+  --code-bg: #fbfbf9;
+  --hl-line: rgba(166, 214, 40, 0.18);
+  --shadow: 0 16px 40px rgba(20, 23, 29, 0.12);
+  --grid: rgba(80, 96, 125, 0.08);
+  --k-file: #50607d;
+  --k-module: #6b7488;
+  --k-class: #8a5600;
+  --k-function: #1d5f99;
+  --k-method: #13766a;
+  --k-route: #a8326e;
+  --k-package: #5b45b0;
+  --k-test: #5b6370;
+  --k-unresolved: #b3261e;
   color-scheme: light;
 }
 
@@ -99,8 +108,11 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --color-code: var(--code-bg);
-  --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", ui-monospace, Consolas, monospace;
+  --color-support: var(--support);
+  --color-signal: var(--accent);
+  --font-sans: var(--font-geist), "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Cascadia Code", "Cascadia Mono", ui-monospace, Consolas, monospace;
+  --font-display: var(--font-instrument), "Iowan Old Style", Georgia, serif;
 }
 
 html,
@@ -194,5 +206,70 @@ body {
   --xy-controls-button-border-color: var(--line);
   --xy-attribution-background-color: transparent;
 }
-.react-flow__node { border-radius: 6px; }
-.react-flow__node.selected { box-shadow: 0 0 0 2px var(--accent); }
+.react-flow__node { border-radius: 8px; }
+.react-flow__node.selected { box-shadow: none; }
+/* Higher specificity than @xyflow/react's own stylesheet, which loads after this file. */
+.react-flow .react-flow__node.react-flow__node-group,
+.react-flow .react-flow__node.react-flow__node-group.selected,
+.react-flow .react-flow__node.react-flow__node-group:hover {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  border-radius: 12px;
+}
+.react-flow__node-atlas:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+.react-flow .react-flow__controls { box-shadow: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.react-flow .react-flow__minimap { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+
+
+/* ---------------------------------------------------------------- CODE ATLAS primitives */
+:root {
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 120ms;
+  --t-med: 200ms;
+  --t-slow: 320ms;
+}
+
+/* Legend label: the voice of a map key — small uppercase mono, wide tracking. */
+.atlas-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.atlas-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+}
+
+/* Chart-paper grid used behind the graph and the landing page (static; costs nothing while idle). */
+.atlas-grid {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@keyframes atlas-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.atlas-in { animation: atlas-in var(--t-med) var(--ease-out) both; }
+
+@keyframes atlas-fade { from { opacity: 0; } to { opacity: 1; } }
+.atlas-fade { animation: atlas-fade var(--t-med) var(--ease-out) both; }
+
+/* Panels glide when collapsed/expanded from a button or shortcut, but follow the pointer exactly while dragging. */
+[data-group]:not(:has([data-separator-state="drag"])) > [data-panel] {
+  transition: flex-grow var(--t-med) var(--ease-out);
+}
+
+/* One-shot line reveal for the landing map (finishes immediately with reduced motion). */
+@keyframes atlas-draw { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
+.atlas-draw { stroke-dasharray: 600; animation: atlas-draw 900ms var(--ease-out) both; }

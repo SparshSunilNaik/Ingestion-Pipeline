@@ -1,6 +1,6 @@
 "use client";
 
-import { Boxes, Braces, FileCode, GitCompare, MessagesSquare, Network, RefreshCw, ScrollText, Workflow, X } from "lucide-react";
+import { Boxes, Braces, FileCode, GitCompare, Maximize2, MessagesSquare, Minimize2, Network, RefreshCw, ScrollText, Workflow, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -88,6 +88,9 @@ export function Canvas() {
             <ScrollText className="h-4 w-4" />
           </IconButton>
           <RefreshButton repositoryId={s.repository.id} />
+          <IconButton label={nav.focusMode ? "Leave focus mode (Ctrl+.)" : "Focus mode: give the canvas the whole window (Ctrl+.)"} onClick={nav.toggleFocus} active={nav.focusMode}>
+            {nav.focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </IconButton>
           <Button
             size="sm"
             variant={nav.assistantOpen ? "secondary" : "primary"}

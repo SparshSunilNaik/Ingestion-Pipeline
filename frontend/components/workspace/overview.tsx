@@ -14,7 +14,7 @@ function Section({ title, action, children, id }: { title: string; action?: Reac
   return (
     <section aria-labelledby={id} className="border-t border-line pt-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 id={id} className="text-[13px] font-semibold">{title}</h2>
+        <h2 id={id} className="atlas-label !text-fg-2">{title}</h2>
         {action}
       </div>
       {children}
@@ -55,11 +55,9 @@ export function Overview({ snapshot: s }: { snapshot: Snapshot }) {
     <div className="@container h-full overflow-auto">
       <div className="mx-auto max-w-[1040px] space-y-5 px-5 py-5">
         <header>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-[20px] font-semibold tracking-tight">{s.repository.owner}/{s.repository.name}</h1>
-            <span className="font-mono text-[12px] text-fg-3">{s.default_branch ?? "HEAD"} @ {s.commit_sha.slice(0, 12)}</span>
-            {s.commit_info.subject && <span className="min-w-0 truncate text-[12px] text-fg-3" title={s.commit_info.subject}>“{s.commit_info.subject}”</span>}
-          </div>
+          <div className="atlas-label">{s.repository.owner} · {s.default_branch ?? "HEAD"} @ {s.commit_sha.slice(0, 12)} · analyzer {s.analyzer_version}</div>
+          <h1 className="atlas-display mt-1.5 text-[clamp(34px,3.6vw,52px)] text-fg">{s.repository.name}</h1>
+          {s.commit_info.subject && <p className="mt-1 truncate font-mono text-[11.5px] text-fg-3" title={s.commit_info.subject}>last commit — “{s.commit_info.subject}”</p>}
           <div className="mt-3 max-w-[520px]"><LanguageBar data={s.inventory_summary.languages_by_bytes} /></div>
         </header>
 
