@@ -22,8 +22,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api, setUnauthorizedHandler } from "@/lib/api";
 import { useAsync, useHotkey, usePref } from "@/lib/hooks";
+import { BackendUnavailable, isBackendDown } from "@/components/shell/backend-status";
 import { CommandPalette } from "@/components/shell/command-palette";
-import { Badge, IconButton, Kbd, ShortSha, StatusDot, cn, jobTone } from "@/components/ui";
+import { Badge, IconButton, Kbd, ShortSha, StatusDot, cn, jobTone, ErrorState } from "@/components/ui";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, match: (p: string) => p === "/" },
@@ -150,7 +151,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar snapshotId={snapshotMatch ? Number(snapshotMatch[1]) : null} onSearch={() => setPalette(true)} />
-        <main className="min-h-0 flex-1 overflow-auto">{auth.data?.authenticated === false ? null : children}</main>
+        <main className="min-h-0 flex-1 overflow-auto">
+          {auth.error ? (
+            isBackendDown(auth.error) ? (
+              <BackendUnavailable error={auth.error} onRetry={auth.reload} />
+            ) : (
+              <div className="p-6"><ErrorState error={auth.error} onRetry={auth.reload} /></div>
+            )
+          ) : auth.data?.authenticated === false ? null : (
+            children
+          )}
+        </main>
       </div>
       {palette && <CommandPalette snapshotId={activeSnapshot} onClose={() => setPalette(false)} />}
       {help && <ShortcutsDialog onClose={() => setHelp(false)} />}

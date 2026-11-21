@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "42" }),
 }));
 
-const api = vi.hoisted(() => ({ job: vi.fn(), cancelJob: vi.fn(), createJob: vi.fn(), login: vi.fn(), repositories: vi.fn(), compare: vi.fn(), refreshRepository: vi.fn(), evidence: vi.fn() }));
+const api = vi.hoisted(() => ({ health: vi.fn(), job: vi.fn(), cancelJob: vi.fn(), createJob: vi.fn(), login: vi.fn(), repositories: vi.fn(), compare: vi.fn(), refreshRepository: vi.fn(), evidence: vi.fn() }));
 vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api }));
 
 const job = (j: Partial<Job>): Job => ({
@@ -27,6 +27,7 @@ const job = (j: Partial<Job>): Job => ({
 });
 
 beforeEach(() => {
+  api.health.mockResolvedValue({ status: "ok", version: "test" });
   router.push.mockReset();
   router.replace.mockReset();
   search.value = new URLSearchParams();

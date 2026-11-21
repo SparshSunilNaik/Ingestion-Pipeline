@@ -4,6 +4,8 @@ import { GitBranch, KeyRound } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { useAsync } from "@/lib/hooks";
+import { BackendUnavailable, isBackendDown } from "@/components/shell/backend-status";
 import { Button, ErrorState } from "@/components/ui";
 
 export function LoginView() {
@@ -12,6 +14,7 @@ export function LoginView() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const health = useAsync(() => api.health(), []);
   const next = search.get("next");
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
@@ -28,6 +31,7 @@ export function LoginView() {
     }
   }
 
+  if (health.error && isBackendDown(health.error)) return <div className="h-full bg-bg"><BackendUnavailable error={health.error} onRetry={health.reload} /></div>;
   return (
     <div className="flex h-full items-center justify-center bg-bg p-6">
       <form onSubmit={submit} className="w-[400px] rounded-lg border border-line bg-panel p-6 shadow-[var(--shadow)]">

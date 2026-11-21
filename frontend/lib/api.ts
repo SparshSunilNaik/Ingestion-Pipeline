@@ -43,6 +43,9 @@ async function request<T>(path: string, init?: RequestInit & { signal?: AbortSig
     } catch {
       /* non-JSON error body */
     }
+    if (code === "internal_error") {
+      message = "The backend hit an unexpected error while handling this request. It was logged in the backend window; retrying often helps.";
+    }
     if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.();
     throw new ApiError(res.status, code, message);
   }

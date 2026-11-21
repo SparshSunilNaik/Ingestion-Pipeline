@@ -8,4 +8,6 @@ $uv = Resolve-Uv
 if (-not $uv) { throw "uv not found; run scripts/setup.ps1 first" }
 $env:UV_LINK_MODE = "copy"
 Push-Location $BackendDir
+# Native stderr (logs) must not terminate the script under Windows PowerShell 5.1.
+$ErrorActionPreference = "Continue"
 try { & $uv run python -m app.worker_main } finally { Pop-Location }

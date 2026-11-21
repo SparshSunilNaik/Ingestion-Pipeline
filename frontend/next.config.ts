@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
-// The browser talks only to this Next.js origin; /api/* is proxied to the local backend.
-// Same-origin requests let the backend use HttpOnly SameSite=Strict session cookies.
-const BACKEND = (process.env.IP_BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+// The browser talks only to this Next.js origin; /api/* is proxied to the local backend by the
+// route handler in app/api/[...path]/route.ts (lib/proxy.ts), which reports an unreachable backend
+// as a structured 503 instead of a bare 500. Same-origin requests let the backend use HttpOnly
+// SameSite=Strict session cookies. The backend address comes from IP_BACKEND_URL.
 
 const nextConfig: NextConfig = {
   // Separate output dir for isolated builds (e.g. end-to-end tests) so they never clobber the dev server.
@@ -10,9 +11,6 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
-  async rewrites() {
-    return [{ source: "/api/:path*", destination: `${BACKEND}/api/:path*` }];
-  },
   async headers() {
     return [
       {

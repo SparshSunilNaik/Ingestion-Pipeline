@@ -14,6 +14,10 @@ $env:UV_LINK_MODE = "copy"
 Push-Location $BackendDir
 try {
     Write-Step "API token file: $(Join-Path $BackendDir 'data\api-token') (created on first start)"
+    # uvicorn and Python logging write to stderr. With $ErrorActionPreference = "Stop", Windows PowerShell 5.1
+    # turns the first captured stderr line into a terminating error and kills the server, so native
+    # output must not be treated as an error here.
+    $ErrorActionPreference = "Continue"
     # `python -m` avoids launcher .exe shims, which Windows Smart App Control may block.
     & $uv run python -m uvicorn app.main:app_factory --factory --host 127.0.0.1 --port $Port
 } finally { Pop-Location }
