@@ -249,6 +249,35 @@ def test_qa_pack_covers_every_explicitly_named_symbol(session, bench_snapshot) -
     assert pack["relationships"]["flows"] and pack["relationships"]["flows"][0]["entry"] == "POST /login"
 
 
+def test_qa_selected_context_leads_the_pack(session, bench_snapshot) -> None:
+    """The node the user attaches is described first, with its definition excerpt, and leads the focus."""
+    from app.agents.gateway import ReadOnlyGateway
+    from app.agents.qa import build_question_pack
+
+    key = "sym:svc/core/models.py#Account.validate"
+    pack = build_question_pack(session, bench_snapshot, "What does this do and who relies on it?", ReadOnlyGateway(session, bench_snapshot), context_key=key)
+    assert pack["selected_context"]["key"] == key and pack["selected_context"]["path"] == "svc/core/models.py"
+    assert pack["excerpts"][0]["path"] == "svc/core/models.py"
+    assert pack["relationships"]["usage"][0]["symbol"] == key
+    # Without a context the same vague question does not single it out.
+    plain = build_question_pack(session, bench_snapshot, "What does this do and who relies on it?", ReadOnlyGateway(session, bench_snapshot))
+    assert "selected_context" not in plain
+
+
+def test_qa_prompt_names_the_attached_context(session, bench_snapshot) -> None:
+    conv = Conversation(snapshot_id=bench_snapshot.id, title="t", model="m/x")
+    session.add(conv)
+    session.flush()
+    key = "sym:svc/core/auth.py#login"
+    q = Message(conversation_id=conv.id, role="user", content="explain this", status="complete", payload={"context": {"key": key}})
+    session.add(q)
+    session.commit()
+    seen: list[str] = []
+    gen = Scripted(lambda p, n: seen.append(p) or json.dumps({"action": "answer", "answer": {"summary": "x", "claims": []}}))
+    answer_question(session, bench_snapshot, conv, q, gen)
+    assert f"SELECTED CONTEXT: the user attached {key}" in seen[0]
+
+
 def test_impact_reaches_routes_four_hops_away(session, bench_snapshot) -> None:
     """Regression (live UI run): POST /login is 4 hops from Account.validate and must be reported."""
     from app.agents.gateway import ReadOnlyGateway

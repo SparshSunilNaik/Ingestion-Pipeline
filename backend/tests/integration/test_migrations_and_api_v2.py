@@ -121,3 +121,16 @@ def test_v2_endpoints(client) -> None:
     assert c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "where is login used?"}).status_code == 503
     assert c.get(f"/api/conversations/{conv['id']}").json()["messages"] == []
     assert json.dumps(c.get(f"/api/snapshots/{sid}/conversations").json())
+
+
+def test_question_context_must_belong_to_the_snapshot(client) -> None:
+    c = client
+    sid = ingest(c)["snapshot_id"]
+    c.app.state.runtime.cfg.mode = "external"  # asking only queues a job; no model is called here
+    conv = c.post(f"/api/snapshots/{sid}/conversations", json={}).json()
+    bad = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "explain this", "context_key": "sym:other/repo.py#secret"})
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "validation_failed"
+    ok = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "explain this", "context_key": "sym:svc/core/auth.py#login"})
+    assert ok.status_code == 202
+    msgs = c.get(f"/api/conversations/{conv['id']}").json()["messages"]
+    assert msgs[0]["payload"]["context"] == {"key": "sym:svc/core/auth.py#login", "kind": "function", "label": "login", "path": "svc/core/auth.py"}

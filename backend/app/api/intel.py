@@ -280,6 +280,8 @@ class ConversationIn(BaseModel):
 
 class QuestionIn(BaseModel):
     content: str = Field(min_length=2, max_length=2000)
+    # Graph node the user is looking at (symbol, file or route key). Must exist in the conversation's snapshot.
+    context_key: str | None = Field(default=None, max_length=1200)
 
 
 def _conversation_out(db: Session, c: Conversation, with_messages: bool = False) -> dict[str, Any]:
@@ -333,7 +335,14 @@ def ask(conversation_id: int, body: QuestionIn, db: Session = Depends(get_db), r
     if busy:
         raise Conflict("A question in this conversation is still being answered")
     snap = _snapshot(db, c.snapshot_id)
-    q = Message(conversation_id=c.id, role="user", content=body.content.strip(), status="complete", payload={})
+    payload: dict[str, Any] = {}
+    if body.context_key:
+        idx = load_index(db, snap)
+        if body.context_key not in idx.nodes:
+            raise ValidationFailed("The attached context is not part of this snapshot", details={"context_key": body.context_key})
+        node = idx.node_info(body.context_key)
+        payload["context"] = {"key": body.context_key, "kind": node.get("kind"), "label": node.get("label"), "path": node.get("path")}
+    q = Message(conversation_id=c.id, role="user", content=body.content.strip(), status="complete", payload=payload)
     db.add(q)
     db.flush()
     reply = Message(conversation_id=c.id, role="assistant", content="", status="pending", payload={})
