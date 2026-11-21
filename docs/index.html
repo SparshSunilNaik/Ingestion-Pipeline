@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Code Atlas · Ingestion-Pipeline — explore software like a living system</title>
+  <meta name="description" content="Ingestion-Pipeline (Code Atlas) maps any public GitHub repository into an evidence-backed atlas: files, symbols, calls, routes and execution flows from a pinned commit, plus an AI assistant whose every statement cites the exact lines. Runs locally." />
+  <meta name="theme-color" content="#101218" />
+  <meta property="og:title" content="Code Atlas · Ingestion-Pipeline" />
+  <meta property="og:description" content="Explore software like a living system. Evidence-grounded repository intelligence that runs on your machine." />
+  <meta property="og:image" content="screenshots/04-graph-selected.png" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="top">
+    <div class="wrap nav__inner">
+      <a class="brand" href="#top" aria-label="Code Atlas — back to top">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <line x1="12" y1="12" x2="4" y2="6" /><line x1="12" y1="12" x2="20" y2="7" /><line class="sig" x1="12" y1="12" x2="15" y2="20" />
+          <circle cx="4" cy="6" r="2" /><circle cx="20" cy="7" r="2" /><circle class="sig" cx="15" cy="20" r="2" /><circle class="core" cx="12" cy="12" r="3.4" />
+        </svg>
+        <span class="brand__word">Code <em>Atlas</em></span>
+      </a>
+      <nav aria-label="Primary">
+        <ul class="nav__links">
+          <li><a href="#surfaces">Product</a></li>
+          <li><a href="#capabilities">Capabilities</a></li>
+          <li><a href="#evidence">Evidence</a></li>
+          <li><a href="#gallery">Gallery</a></li>
+          <li><a href="#start">Quick start</a></li>
+        </ul>
+      </nav>
+      <a class="btn btn--ghost nav__gh" href="https://github.com/SparshSunilNaik/Ingestion-Pipeline">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.39-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============================================================ HERO -->
+    <section class="hero" aria-labelledby="hero-title">
+      <svg class="hero__field" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g class="field__lines">
+          <line x1="180" y1="150" x2="420" y2="300" /><line x1="420" y1="300" x2="700" y2="180" /><line x1="420" y1="300" x2="620" y2="520" />
+          <line x1="700" y1="180" x2="980" y2="260" /><line x1="620" y1="520" x2="930" y2="560" /><line x1="980" y1="260" x2="930" y2="560" />
+          <line x1="180" y1="150" x2="120" y2="460" /><line x1="120" y1="460" x2="620" y2="520" /><line x1="700" y1="180" x2="820" y2="60" />
+        </g>
+        <g class="field__nodes">
+          <circle cx="180" cy="150" r="4" /><circle cx="420" cy="300" r="7" class="hub" /><circle cx="700" cy="180" r="4" />
+          <circle cx="620" cy="520" r="4" /><circle cx="980" cy="260" r="4" /><circle cx="930" cy="560" r="4" />
+          <circle cx="120" cy="460" r="4" /><circle cx="820" cy="60" r="4" />
+        </g>
+      </svg>
+
+      <div class="wrap hero__grid">
+        <div class="hero__copy">
+          <p class="label reveal" style="--d:0"><span class="dot" aria-hidden="true"></span> ingestion-pipeline · repository intelligence</p>
+          <h1 id="hero-title" class="display reveal" style="--d:1">Explore software<br />like a <em>living system.</em></h1>
+          <p class="lede reveal" style="--d:2">
+            Paste a public GitHub repository. Code Atlas pins the exact commit, maps its files, symbols, calls and routes,
+            traces how it runs and what a change could reach — and answers your questions with citations to the exact lines.
+            Everything runs on your machine.
+          </p>
+          <div class="hero__cta reveal" style="--d:3">
+            <a class="btn btn--signal" href="#start">Get started <span aria-hidden="true">→</span></a>
+            <a class="btn btn--ghost" href="https://github.com/SparshSunilNaik/Ingestion-Pipeline">View the source</a>
+          </div>
+          <dl class="hero__facts reveal" style="--d:4">
+            <div><dt>languages</dt><dd>Python · TS/JS · Go · Java</dd></div>
+            <div><dt>repository code</dt><dd>never executed</dd></div>
+            <div><dt>AI model</dt><dd>tool-less, cites evidence</dd></div>
+          </dl>
+        </div>
+
+        <figure class="hero__shot reveal" style="--d:2">
+          <div class="window">
+            <div class="window__bar" aria-hidden="true"><span></span><span></span><span></span><code>localhost:3000 · pallets/itsdangerous @ 672971d</code></div>
+            <img src="screenshots/04-graph-selected.png" width="1920" height="1080" alt="Code Atlas architecture graph of the itsdangerous repository: the file signer.py is selected, its import relationships are lit in lime, and a detail card lists its imports and importers with source citations." />
+          </div>
+          <figcaption>Real analysis of <code>pallets/itsdangerous</code> — a selected node lights its relationships and opens its evidence.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ PROOF STRIP -->
+    <section class="strip" aria-label="At a glance">
+      <div class="wrap strip__grid">
+        <div><strong>1.000</strong><span>relationship precision on both benchmark fixtures</span></div>
+        <div><strong>24 / 24</strong><span>relationships on the held-out fixture</span></div>
+        <div><strong>574 / 574</strong><span>evidence records re-verified on itsdangerous</span></div>
+        <div><strong>230+</strong><span>automated tests incl. browser + accessibility</span></div>
+      </div>
+    </section>
+
+    <!-- ============================================================ SURFACES -->
+    <section class="section" id="surfaces" aria-labelledby="surfaces-title">
+      <div class="wrap">
+        <header class="section__head">
+          <p class="label">01 · the instrument</p>
+          <h2 id="surfaces-title" class="display display--md">Three surfaces, <em>one place to think.</em></h2>
+          <p class="section__lede">The workspace keeps the repository, the thing you are studying and your questions side by side — so context is never lost while you move between code, graphs and answers.</p>
+        </header>
+
+        <div class="surfaces">
+          <ol class="surfaces__list">
+            <li>
+              <span class="num">A</span>
+              <div>
+                <h3>Repository explorer</h3>
+                <p>Search across code, symbols and files; browse the tree, the most-used symbols, entry points and routes, and your saved investigations.</p>
+              </div>
+            </li>
+            <li>
+              <span class="num">B</span>
+              <div>
+                <h3>Intelligence canvas</h3>
+                <p>Tabs for the overview, source, a symbol&rsquo;s usage and change impact, the architecture graph, execution flows, the report and snapshot comparison. Every tab is a deep link.</p>
+              </div>
+            </li>
+            <li>
+              <span class="num">C</span>
+              <div>
+                <h3>Investigation assistant</h3>
+                <p>Ask about whatever you are looking at. The selected symbol travels with the question, and every answer is a short document whose statements cite verified lines.</p>
+              </div>
+            </li>
+          </ol>
+          <figure class="surfaces__shot">
+            <div class="window">
+              <div class="window__bar" aria-hidden="true"><span></span><span></span><span></span><code>source · assistant</code></div>
+              <img src="screenshots/07-assistant.png" width="1920" height="1080" loading="lazy" alt="Workspace with the file tree on the left, signer.py source with an outline and the Signer.get_signature inspector in the middle, and the assistant on the right answering with numbered, cited statements." />
+            </div>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ CAPABILITIES -->
+    <section class="section section--alt" id="capabilities" aria-labelledby="cap-title">
+      <div class="wrap">
+        <header class="section__head">
+          <p class="label">02 · what it can do</p>
+          <h2 id="cap-title" class="display display--md">From a URL to an <em>explorable map.</em></h2>
+        </header>
+
+        <div class="bento">
+          <article class="tile tile--wide">
+            <div>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8.2 7.2 15.7 8M7.3 8.2l3.6 7.8M16.8 9.3l-3.5 6.6"/></svg>
+            <h3>A living architecture graph</h3>
+            <p>ELK-laid-out directories, files and call graphs with collapsible groups and a glyph for every kind of node. Select a node and its relationships light up while the camera glides to it; open its source and come back to exactly the same view.</p>
+            </div>
+            <img src="screenshots/03-architecture.png" width="1920" height="1080" loading="lazy" alt="File-level architecture graph grouped by directory, with test files marked as tests and packages shown with dashed borders." />
+          </article>
+          <article class="tile">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6M4 12h10M4 18h7"/><path d="m15 5 4 4-4 4"/></svg>
+            <h3>Execution flows</h3>
+            <p>Trace possible paths from routes, mains or any function — step by step, with each call site cited and dynamic dispatch marked as <em>possible</em>.</p>
+          </article>
+          <article class="tile">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+            <h3>Change impact</h3>
+            <p>What could be affected if this changes? Direct and transitive dependents, reachable routes and the tests that exercise it — labelled as potential, never guessed.</p>
+          </article>
+          <article class="tile">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v12H9l-4 4z"/><path d="M9 9h6M9 12h4"/></svg>
+            <h3>Answers with citations</h3>
+            <p>Multi-turn questions through OpenCode. The model has no tools; the backend retrieves evidence, and every cited line is re-verified before you see it.</p>
+          </article>
+          <article class="tile">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M17 4v16"/><path d="M7 8h10M7 16h10"/></svg>
+            <h3>Snapshot comparison</h3>
+            <p>Each analysis is pinned to a commit SHA and an analyzer version. Compare two snapshots: files, symbols, routes, dependencies and relationships that changed.</p>
+          </article>
+          <article class="tile tile--span2">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+            <h3>Deep static analysis</h3>
+            <p>Re-exports, inheritance and method lookup, override-aware dispatch, constructor, return and attribute types; FastAPI, Flask, Django, Express, Next.js, Gin, net/http and Spring routes.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ EVIDENCE -->
+    <section class="section" id="evidence" aria-labelledby="ev-title">
+      <div class="wrap evidence">
+        <div class="evidence__copy">
+          <p class="label">03 · evidence first</p>
+          <h2 id="ev-title" class="display display--md">Every statement <em>points at code.</em></h2>
+          <p class="section__lede">Facts are stored as evidence records — path, line range, commit and a hash of the exact lines. Claims carry a basis you can see, and anything that cannot be verified is marked, not hidden.</p>
+          <ul class="basis" aria-label="Claim basis labels">
+            <li><span class="chip chip--ok">source</span> cites implementation or test code</li>
+            <li><span class="chip chip--info">config</span> cites manifests or configuration only</li>
+            <li><span class="chip chip--warn">docs claim</span> documentation only — code not checked</li>
+            <li><span class="chip chip--bad">unsupported</span> no valid evidence — struck through</li>
+          </ul>
+        </div>
+        <div class="evidence__card" aria-label="Example answer">
+          <p class="label">question</p>
+          <p class="q">What does this method return, and how is the separator used?</p>
+          <p class="attached"><span aria-hidden="true">◎</span> about <code>Signer.sign</code></p>
+          <p class="a">Signer.sign returns the byte-normalised input, followed by the configured separator, followed by that input&rsquo;s signature — the separator delimits the value from its signature.</p>
+          <ol class="claims">
+            <li><span>1</span><div>Converts its argument with <code>want_bytes</code>, then returns <code>value + self.sep + self.get_signature(value)</code>.<br /><a href="https://github.com/pallets/itsdangerous/blob/672971d66a2ef9f85151e53283113f33d642dabd/src/itsdangerous/signer.py#L222-L225" class="cite" aria-label="Source of claim 1: signer.py lines 222 to 225 at commit 672971d on GitHub">signer.py:222-225</a></div></li>
+            <li><span>2</span><div>Tests show a signed value validates and unsigns to the original payload.<br /><span class="cite">test_signer.py</span></div></li>
+          </ol>
+          <p class="meta">grounded in source · openai/gpt-5.6-terra · 1 model call</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ PIPELINE -->
+    <section class="section section--alt" aria-labelledby="how-title">
+      <div class="wrap">
+        <header class="section__head">
+          <p class="label">04 · how it works</p>
+          <h2 id="how-title" class="display display--md">Four steps, <em>no surprises.</em></h2>
+        </header>
+        <ol class="steps">
+          <li><span class="num">01</span><h3>Acquire safely</h3><p>A shallow, hardened clone of the exact commit: no hooks, submodules or LFS; git runs inside a Windows Job Object with memory and process limits.</p></li>
+          <li><span class="num">02</span><h3>Map statically</h3><p>Tree-sitter and Python&rsquo;s <code>ast</code> turn source into symbols, imports, calls, inheritance, routes and dependencies — resolved across files.</p></li>
+          <li><span class="num">03</span><h3>Verify evidence</h3><p>Every fact becomes an evidence record checked against the snapshot on disk; incremental refresh re-parses only what changed.</p></li>
+          <li><span class="num">04</span><h3>Explore &amp; ask</h3><p>Graphs, flows, impact and comparison in the browser; questions answered by a tool-less model from evidence the backend chooses.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============================================================ GALLERY -->
+    <section class="section" id="gallery" aria-labelledby="gal-title">
+      <div class="wrap">
+        <header class="section__head">
+          <p class="label">05 · gallery</p>
+          <h2 id="gal-title" class="display display--md">Captured from <em>a real instance.</em></h2>
+          <p class="section__lede">No mock-ups: every image is the running application analysing <code>pallets/itsdangerous</code>.</p>
+        </header>
+        <div class="gallery" role="tablist" aria-label="Screens">
+          <button role="tab" aria-selected="true" aria-controls="gallery-view" data-src="screenshots/01-landing.png" data-alt="Code Atlas start page with the headline, repository URL input, engine status and the real import map of the last explored repository.">Start</button>
+          <button role="tab" aria-selected="false" aria-controls="gallery-view" data-src="screenshots/02-overview.png" data-alt="Repository overview briefing for itsdangerous: what it does, where to start, entry points, most used code.">Overview</button>
+          <button role="tab" aria-selected="false" aria-controls="gallery-view" data-src="screenshots/05-source.png" data-alt="Source view of signer.py with the cited lines highlighted, an outline and the symbol inspector.">Source</button>
+          <button role="tab" aria-selected="false" aria-controls="gallery-view" data-src="screenshots/06-execution-flow.png" data-alt="Execution flow traced from Signer.get_signature with resolved, ambiguous and possible steps and citations.">Flow</button>
+          <button role="tab" aria-selected="false" aria-controls="gallery-view" data-src="screenshots/10-impact.png" data-alt="Change impact of Signer.get_signature: direct and indirect dependents, tests and a dependents graph.">Impact</button>
+          <button role="tab" aria-selected="false" aria-controls="gallery-view" data-src="screenshots/08-report.png" data-alt="Technical report with contents, claim basis labels and Markdown and JSON export.">Report</button>
+        </div>
+        <figure class="window gallery__view" id="gallery-view" role="tabpanel" aria-live="polite">
+          <div class="window__bar" aria-hidden="true"><span></span><span></span><span></span><code id="gallery-cap">start</code></div>
+          <img id="gallery-img" src="screenshots/01-landing.png" width="1920" height="1080" loading="lazy" alt="Code Atlas start page with the headline, repository URL input, engine status and the real import map of the last explored repository." />
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ TRUST -->
+    <section class="section section--alt" aria-labelledby="trust-title">
+      <div class="wrap trust">
+        <header class="section__head">
+          <p class="label">06 · boundaries</p>
+          <h2 id="trust-title" class="display display--md">Honest about <em>what it guarantees.</em></h2>
+        </header>
+        <div class="trust__grid">
+          <div class="trust__col">
+            <h3>Enforced</h3>
+            <ul class="check">
+              <li>Repository code is never executed; manifests are parsed declaratively.</li>
+              <li>The model calls a tool-less endpoint; reads go through a read-only, budgeted gateway.</li>
+              <li>Every cited evidence ID is re-verified against the commit on disk.</li>
+              <li>Local token auth, HttpOnly sessions, CSRF header, request limits, localhost only.</li>
+              <li>The AI model is never switched silently; the one in use is shown everywhere.</li>
+            </ul>
+          </div>
+          <div class="trust__col">
+            <h3>Not claimed</h3>
+            <ul class="dash">
+              <li>Job Objects limit resources — they are not a sandbox.</li>
+              <li>Impact is static reachability, not proof that anything breaks.</li>
+              <li>Citation validity is not semantic accuracy; that needs human review.</li>
+              <li>Single user, single machine. Not production-ready.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ QUICK START -->
+    <section class="section" id="start" aria-labelledby="start-title">
+      <div class="wrap start">
+        <div>
+          <p class="label">07 · quick start</p>
+          <h2 id="start-title" class="display display--md">Running in <em>three commands.</em></h2>
+          <p class="section__lede">Windows 11 with PowerShell, Python 3.12+, Node.js 20.9+ and Git. OpenCode is optional — static analysis works without it. No WSL or Docker required.</p>
+          <p class="small">Then open <code>http://localhost:3000</code> and paste the token from <code>backend\data\api-token</code> once.</p>
+        </div>
+        <div class="terminal" aria-label="Commands">
+          <div class="terminal__row"><code>git clone https://github.com/SparshSunilNaik/Ingestion-Pipeline.git; cd Ingestion-Pipeline</code><button class="copy" type="button" aria-label="Copy the clone command" data-copy="git clone https://github.com/SparshSunilNaik/Ingestion-Pipeline.git; cd Ingestion-Pipeline">Copy</button></div>
+          <div class="terminal__row"><code>.\scripts\setup.ps1</code><button class="copy" type="button" aria-label="Copy the setup command" data-copy=".\scripts\setup.ps1">Copy</button></div>
+          <div class="terminal__row"><code>.\scripts\start-dev.ps1</code><button class="copy" type="button" aria-label="Copy the start command" data-copy=".\scripts\start-dev.ps1">Copy</button></div>
+          <p class="terminal__note" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot__inner">
+      <div>
+        <span class="brand__word">Code <em>Atlas</em></span>
+        <p class="small">Ingestion-Pipeline — evidence-grounded repository intelligence. A hobby project; not production-ready.</p>
+      </div>
+      <nav aria-label="Documentation">
+        <ul class="foot__links">
+          <li><a href="https://github.com/SparshSunilNaik/Ingestion-Pipeline#readme">README</a></li>
+          <li><a href="https://github.com/SparshSunilNaik/Ingestion-Pipeline/blob/main/ARCHITECTURE.md">Architecture</a></li>
+          <li><a href="https://github.com/SparshSunilNaik/Ingestion-Pipeline/blob/main/docs/SECURITY.md">Security model</a></li>
+          <li><a href="https://github.com/SparshSunilNaik/Ingestion-Pipeline/blob/main/docs/BENCHMARKS.md">Benchmarks</a></li>
+          <li><a href="https://github.com/SparshSunilNaik/Ingestion-Pipeline/blob/main/docs/DESIGN_DIRECTION.md">Design direction</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="assets/site.js" defer></script>
+</body>
+</html>
